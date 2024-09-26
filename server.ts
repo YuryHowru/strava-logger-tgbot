@@ -31,7 +31,7 @@ const sendStravaAuthUrl = (ctx: any) => {
     '🤖 Физкульты! 👋 Я здесь, чтобы держать всех в чате в курсе ваших тренировок! Пожалуйста, дайте мне доступ к информации о ваших тренировках в Страве.',
     {
       reply_markup: {
-        inline_keyboard: [[{ text: 'Авторизовать Страву', url: stravaAuthUrl }]]
+      inline_keyboard: [[{ text: 'Авторизовать Страву', url: stravaAuthUrl }]]
       }
     }
   );
@@ -227,8 +227,8 @@ app.post('/webhook', express.json(), (req, res) => {
   }
 });
 
-app.listen(3000, () => {
-  console.log(`Server running on port 3000 ${process.env.APP_URL}`);
+app.listen(process.env.PORT, () => {
+  console.log(`Server running on port ${process.env.PORT} ${process.env.APP_URL}`);
 });
 
 bot.launch();
