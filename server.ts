@@ -38,6 +38,7 @@ const sendStravaAuthUrl = (ctx: any) => {
 }
 
 bot.command('ping', ctx => ctx.reply('pong'));
+bot.command('credit', ctx => ctx.replyWithMarkdownV2('[GitHub Repository](https://github.com/YuryHowru/strava-logger-tgbot)'));
 bot.command('auth', sendStravaAuthUrl);
 bot.command('init', async ctx => {
   try {
@@ -74,7 +75,6 @@ bot.command('init', async ctx => {
     });
   } catch (e: any) {
     console.log('[SUB ERROR]', e.error)
-    return ctx.reply(e.error.replaceAll('/', ' '));
   }
 
   sendStravaAuthUrl(ctx);
