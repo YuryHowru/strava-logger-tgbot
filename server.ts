@@ -18,7 +18,7 @@ strava.config({
 });
 
 app.use((req, res, next) => {
-  console.log(`[${req.method}] ${req.url === '/healthz' ? '' : req.url}`);
+  if (req.url !== '/healthz') console.log(`[${req.method}] ${req.url}`);
   res.setHeader('Content-Type', 'application/json');
   next();
 });
@@ -137,7 +137,7 @@ app.get('/setup-webhooks', async (req, res) => {
 
 app.get('/subs', async (req, res) => {
   try {
-    const list = strava.pushSubscriptions.list();
+    const list = await strava.pushSubscriptions.list();
     console.log(list);
     res.status(200).send();
   } catch (e) {
