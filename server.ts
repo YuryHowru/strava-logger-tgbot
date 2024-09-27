@@ -18,7 +18,7 @@ strava.config({
 });
 
 app.use((req, res, next) => {
-  console.log(`[${req.method}] ${req.url}`);
+  console.log(`[${req.method}] ${req.url === '/healthz' ? '' : req.url}`);
   res.setHeader('Content-Type', 'application/json');
   next();
 });
@@ -135,6 +135,33 @@ app.get('/setup-webhooks', async (req, res) => {
   }
 })
 
+app.get('/subs', async (req, res) => {
+  try {
+    const list = strava.pushSubscriptions.list();
+    console.log(list);
+    res.status(200).send();
+  } catch (e) {
+    console.log(e);
+    res.status(400).send();
+  }
+})
+
+app.get('/users', async (req, res) => {
+  try {
+    DB.run(`
+      SELECT * FROM USERS 
+    `, (res: any, err: any) => {
+      if (err) throw err;
+
+      console.log(res);
+      res.status(200).send();
+    })
+  } catch (e) {
+    console.log(e);
+    return res.status(400).send();
+  }
+});
+
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -155,7 +182,6 @@ function formatTime(seconds: number) {
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
 
-  // Pad with zeros if needed
   const paddedHrs = hrs.toString().padStart(2, '0');
   const paddedMins = mins.toString().padStart(2, '0');
   const paddedSecs = secs.toString().padStart(2, '0');
@@ -169,8 +195,7 @@ function calculatePace(movingTime: number, distance: number) {
   const paceInSecondsPerKm = movingTime / (distance / 1000);
   const mins = Math.floor(paceInSecondsPerKm / 60);
   const secs = Math.floor(paceInSecondsPerKm % 60);
-  
-  // Pad seconds with zero if needed
+
   const paddedSecs = secs.toString().padStart(2, '0');
 
   return `${mins}:${paddedSecs}`;
@@ -180,15 +205,17 @@ app.post('/webhook', express.json(), (req, res) => {
   try {
     const { object_type, object_id, aspect_type, owner_id } = req.body;
 
-    console.log(`[ACTIVITY] ${object_type}`);
+    console.log(`[ACTIVITY] ${object_type} ${aspect_type}`);
     if (!(object_type == 'activity' && aspect_type === 'create')) {
       return res.status(200).send('OK');
     }
 
     DB.get<any>("SELECT * FROM users WHERE athleteId = ?", [owner_id], (err, user) => {
       if (err) throw err;
+
+      console.log(`[ACTIVITY] ${JSON.stringify(user)}`);
       
-      strava.activities.get({ id: object_id, access_token: user.accessToken }, (err, activity) => {
+      strava.activities.get({ id: object_id, access_token: user?.accessToken }, (err, activity) => {
         if (err) {
           console.error('Error fetching activity details from Strava:', err);
           return res.status(200).send('OK');
