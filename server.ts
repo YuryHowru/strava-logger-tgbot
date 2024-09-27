@@ -150,10 +150,10 @@ app.get('/users', async (req, res) => {
   try {
     DB.run(`
       SELECT * FROM USERS 
-    `, (res: any, err: any) => {
+    `, (users: any, err: any) => {
       if (err) throw err;
 
-      console.log(res);
+      console.log(users);
       res.status(200).send();
     })
   } catch (e) {
