@@ -82,25 +82,21 @@ bot.command('status', async (ctx) => {
   const chatId = ctx.chat.id;
 
   try {
-    // Query the database for user information based on chatId
     const userQuery = `
       SELECT athleteId, username, expiresAt FROM users WHERE chatId = $1
     `;
     const { rows } = await pool.query(userQuery, [chatId]);
 
-    // Check if the user exists
     if (rows.length === 0) {
       bot.telegram.sendMessage(ctx.chat.id, '😢 *Вы не авторизованы.* Используйте /auth', {parse_mode: 'Markdown'})
       return;
     }
 
     const user = rows[0];
-    const expirationTime = new Date(user.expiresAt * 1000); // Convert to milliseconds
 
-    // Prepare a nice response
     const message = `
       *Имя пользователя:* ${user.username}
-      *Статус:* ${expirationTime > new Date() ? '✅ Авторизован' : '❌ Не авторизован'}
+      *Статус:* '✅ Авторизован'
     `;
 
     // Send the response
@@ -265,7 +261,7 @@ app.post('/webhook', express.json(), async (req, res) => {
     }
 
     const result = await pool.query('SELECT * FROM users WHERE athleteId = $1', [owner_id]);
-    const user = result.rows[0]; // Extract the user from the query result
+    const user = result.rows[0];
 
     if (!user) {
       console.log(`No user found with athleteId ${owner_id}`);
@@ -274,8 +270,39 @@ app.post('/webhook', express.json(), async (req, res) => {
 
     console.log(`[ACTIVITY] User:`, user);
 
+    if (user.expiresAt <= new Date()) {
+      const response = await fetch('https://www.strava.com/api/v3/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: process.env.STRAVA_ID,
+          client_secret: process.env.STRAVA_SECRET,
+          grant_type: 'refresh_token',
+          refresh_token: user.refreshToken,
+        }),
+      });
+
+      const refreshResult = await response.json();
+
+      await pool.query(
+        `UPDATE users 
+          SET accessToken = $1, refreshToken = $2, expiresAt = $3 
+          WHERE athleteId = $4`,
+        [
+          refreshResult.access_token,
+          refreshResult.refresh_token,
+          refreshResult.expires_at,
+          user.athleteId,
+        ]
+      );
+
+      user.accessToken = refreshResult.access_token;
+      user.refreshToken = refreshResult.refresh_token;
+      user.expiresAt = refreshResult.expires_at;
+
+      console.log('Tokens refreshed successfully!');
+    }
   
-    // Fetch activity details from Strava
     const activity = await new Promise<any>((resolve) => strava.activities.get({ id: object_id, access_token: user.accessToken }, (err, activity) => {
       if (err) {
         console.error('Error fetching activity details from Strava:', err);
