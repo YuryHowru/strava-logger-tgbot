@@ -1,14 +1,19 @@
 import { Telegraf } from "telegraf";
 import strava from 'strava-v3';
 import express from 'express';
-import sqlite from "sqlite3";
 import dotenv from 'dotenv';
+import { Pool } from 'pg';
 
 dotenv.config();
 
 const bot = new Telegraf(process.env.BOT_SECRET!);
 const app = express();
-const DB = new sqlite.Database('strava-bot.db')
+const pool = new Pool({
+  connectionString: process.env.DB_URL, // Use DATABASE_URL from your environment variables
+  ssl: {
+   rejectUnauthorized: false, // For local development and cloud environments
+  },
+  });
 
 strava.config({
   client_id: process.env.STRAVA_ID!,
@@ -17,29 +22,29 @@ strava.config({
   redirect_uri: process.env.APP_URL!,
 });
 
+function getStravaAuthUrl(chatId: any) {
+  return `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_ID}&response_type=code&redirect_uri=${process.env.APP_URL}/auth/&approval_prompt=force&scope=read,activity:read&state=${chatId}`;
+}
+
+
 app.use((req, res, next) => {
   if (req.url !== '/healthz') console.log(`[${req.method}] ${req.url}`);
   res.setHeader('Content-Type', 'application/json');
   next();
 });
 
-const sendStravaAuthUrl = (ctx: any) => {
-  const chatId = ctx.chat.id;
-  const stravaAuthUrl = `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_ID}&response_type=code&redirect_uri=${process.env.APP_URL}/auth/&approval_prompt=force&scope=read,activity:read&state=${chatId}`;
-
+bot.command('ping', ctx => ctx.reply('pong'));
+bot.command('credit', ctx => ctx.replyWithMarkdownV2('[GitHub Repository](https://github.com/YuryHowru/strava-logger-tgbot)'));
+bot.command('auth', (ctx: any) => {
   ctx.reply(
-    '🤖 Физкульты! 👋 Я здесь, чтобы держать всех в чате в курсе ваших тренировок! Пожалуйста, дайте мне доступ к информации о ваших тренировках в Страве.',
+    '🤖',
     {
       reply_markup: {
-      inline_keyboard: [[{ text: 'Авторизовать Страву', url: stravaAuthUrl }]]
+      inline_keyboard: [[{ text: 'Авторизовать Страву', url: getStravaAuthUrl(ctx.chat.id) }]]
       }
     }
   );
-}
-
-bot.command('ping', ctx => ctx.reply('pong'));
-bot.command('credit', ctx => ctx.replyWithMarkdownV2('[GitHub Repository](https://github.com/YuryHowru/strava-logger-tgbot)'));
-bot.command('auth', sendStravaAuthUrl);
+});
 bot.command('init', async ctx => {
   try {
     const createUsersTable = `
@@ -47,20 +52,14 @@ bot.command('init', async ctx => {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         athleteId INTEGER UNIQUE,
         username TEXT NOT NULL,
-        chatId INTEGER NOT NULL,
+        chatId BIGINT NOT NULL,
         accessToken TEXT NOT NULL,
         refreshToken TEXT NOT NULL,
         expiresAt INTEGER NOT NULL
       )
     `;
-    await new Promise<void>((res, rej) => {
-      DB.run(createUsersTable, (err) => {
-        if (err) return rej(err);
-
-        console.log('[DB] OK. Users table created.');
-        res();
-      });
-    });
+    const table = await pool.query(createUsersTable, []);
+    console.log(`[DB] OK`, table);
   } catch (e: any) {
     console.log('[DB ERROR]', e);
     return ctx.reply(e.message);
@@ -77,7 +76,40 @@ bot.command('init', async ctx => {
     console.log('[SUB ERROR]', e.error)
   }
 
-  sendStravaAuthUrl(ctx);
+  ctx.reply(getStravaAuthUrl(ctx.chat.id))
+});
+bot.command('status', async (ctx) => {
+  const chatId = ctx.chat.id;
+
+  try {
+    // Query the database for user information based on chatId
+    const userQuery = `
+      SELECT athleteId, username, expiresAt FROM users WHERE chatId = $1
+    `;
+    const { rows } = await pool.query(userQuery, [chatId]);
+
+    // Check if the user exists
+    if (rows.length === 0) {
+      bot.telegram.sendMessage(ctx.chat.id, '😢 *Вы не авторизованы.* Используйте /auth', {parse_mode: 'Markdown'})
+      return;
+    }
+
+    const user = rows[0];
+    const expirationTime = new Date(user.expiresAt * 1000); // Convert to milliseconds
+
+    // Prepare a nice response
+    const message = `
+      *Имя пользователя:* ${user.username}
+      *Статус:* ${expirationTime > new Date() ? '✅ Авторизован' : '❌ Не авторизован'}
+    `;
+
+    // Send the response
+    bot.telegram.sendMessage(ctx.chat.id, message, {parse_mode: 'Markdown'})
+    ctx.reply(message, { parse_mode: 'Markdown' });
+  } catch (error) {
+    console.error('Error fetching user status:', error);
+    ctx.reply('🚨 Произошла ошибка при получении статуса. Попробуйте снова позже.');
+  }
 });
 
 app.get('/auth', async (req, res) => {
@@ -88,28 +120,32 @@ app.get('/auth', async (req, res) => {
     const tokenResponse = await strava.oauth.getToken(code);
     const { access_token, refresh_token, expires_at, athlete } = tokenResponse;
 
-    await new Promise<void>((res, rej) => {
-      DB.run(
-      `
-        INSERT INTO users (athleteId, accessToken, refreshToken, expiresAt, chatId, username)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(athleteId) DO UPDATE SET
-          accessToken = excluded.accessToken,
-          refreshToken = excluded.refreshToken,
-          expiresAt = excluded.expiresAt,
-          chatId = excluded.chatId,
-          username = excluded.username
-      `,
-      [athlete.id, access_token, refresh_token, expires_at, chatId, athlete.username],
-      (err) => {
-        if (err) return rej(err);
-        res()
-      }
-      );
-    });
+    console.log(`[AUTH] Athlete:`, athlete);
+
+    const queryText = `
+      INSERT INTO users (athleteId, accessToken, refreshToken, expiresAt, chatId, username)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (athleteId) DO UPDATE SET
+        accessToken = EXCLUDED.accessToken,
+        refreshToken = EXCLUDED.refreshToken,
+        expiresAt = EXCLUDED.expiresAt,
+        chatId = EXCLUDED.chatId,
+        username = EXCLUDED.username
+    `;
+
+    const values = [
+      athlete.id,        // $1
+      access_token,      // $2
+      refresh_token,     // $3
+      expires_at,        // $4
+      chatId,            // $5
+      athlete.username,  // $6
+    ];
+
+    const user = await pool.query(queryText, values);
+    console.log(`[AUTH] User:`, user);
 
     bot.telegram.sendMessage(chatId, `🎉 ${athlete.firstname} ${athlete.lastname} профессионально подключил Страву!`);
-
     
     res.send('Всё сработало, можно закрывать это окно.');
   } catch (error) {
@@ -148,19 +184,37 @@ app.get('/subs', async (req, res) => {
 
 app.get('/users', async (req, res) => {
   try {
-    DB.run(`
-      SELECT * FROM USERS 
-    `, (users: any, err: any) => {
-      if (err) throw err;
+    const allUsers = await pool.query(`SELECT * FROM USERS`);
+    console.log(allUsers);
 
-      console.log(users);
-      res.status(200).send();
-    })
+    res.status(200).send({status: 'ok'});
   } catch (e) {
     console.log(e);
     return res.status(400).send();
   }
 });
+
+app.get('/setup-table', async (req, res) => {
+  try {
+    const createUsersTable = `
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        athleteId INTEGER UNIQUE,
+        username TEXT NOT NULL,
+        chatId INTEGER NOT NULL,
+        accessToken TEXT NOT NULL,
+        refreshToken TEXT NOT NULL,
+        expiresAt INTEGER NOT NULL
+      )
+    `;
+    const table = await pool.query(createUsersTable, []);
+    console.log(`[DB] OK`, table);
+    res.status(200).send({table});
+  } catch (e) {
+    console.log(e);
+    res.status(400).send({error: e});
+  }
+})
 
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -201,37 +255,65 @@ function calculatePace(movingTime: number, distance: number) {
   return `${mins}:${paddedSecs}`;
 }
 
-app.post('/webhook', express.json(), (req, res) => {
+app.post('/webhook', express.json(), async (req, res) => {
   try {
     const { object_type, object_id, aspect_type, owner_id } = req.body;
 
     console.log(`[ACTIVITY] ${object_type} ${aspect_type}`);
-    if (!(object_type == 'activity' && aspect_type === 'create')) {
+    if (!(object_type === 'activity' && aspect_type === 'create')) {
       return res.status(200).send('OK');
     }
 
-    DB.get<any>("SELECT * FROM users WHERE athleteId = ?", [owner_id], (err, user) => {
-      if (err) throw err;
+    const result = await pool.query('SELECT * FROM users WHERE athleteId = $1', [owner_id]);
+    const user = result.rows[0]; // Extract the user from the query result
 
-      console.log(`[ACTIVITY] ${JSON.stringify(user)}`);
-      
-      strava.activities.get({ id: object_id, access_token: user?.accessToken }, (err, activity) => {
-        if (err) {
-          console.error('Error fetching activity details from Strava:', err);
-          return res.status(200).send('OK');
-        }
+    if (!user) {
+      console.log(`No user found with athleteId ${owner_id}`);
+      return res.status(200).send('OK');
+    }
 
-        // Prepare activity details
-        const activityName = activity.name;
-        const activityType = activity.type;
-        const distanceKm = (activity.distance / 1000).toFixed(2); 
-        const movingTime = formatTime(activity.moving_time); 
-        const elevationGain = activity.total_elevation_gain ? activity.total_elevation_gain.toFixed(2) : '0';
-        const pace = calculatePace(activity.moving_time, activity.distance);
-        const activityLink = `https://www.strava.com/activities/${object_id}`;
+    console.log(`[ACTIVITY] User:`, user);
 
-        // Prepare message
-        const message = `
+  
+    // Fetch activity details from Strava
+    const activity = await new Promise<any>((resolve) => strava.activities.get({ id: object_id, access_token: user.accessToken }, (err, activity) => {
+      if (err) {
+        console.error('Error fetching activity details from Strava:', err);
+        return res.status(200).send('OK');
+      }
+      resolve(activity);
+    }));
+    
+    const activityType = activity.type;
+    const activityName = activity.name;
+    const movingTime = formatTime(activity.moving_time);
+    const activityLink = `https://www.strava.com/activities/${object_id}`;
+    let message: string;
+    if (activityType === 'WeightTraining' || activityType === 'Workout') {
+      // Если тренировка не имеет дистанции (например, силовая тренировка)
+      const calories = activity.calories ? `${activity.calories.toFixed(2)} ккал` : 'неизвестно';
+      const description = activity.description || 'Нет описания';
+  
+      message = `
+        💪 *${user.username}* завершил силовую тренировку! 
+  
+        *Занятие*: ${activityType} - ${activityName}
+        *Продолжительность*: ${movingTime}
+        *Потраченные калории*: ${calories}
+        *Описание*: ${description}
+  
+        [Открыть в Страве](${activityLink})
+      `;
+    } else {
+      // Prepare activity details
+
+      const distanceKm = (activity.distance / 1000).toFixed(2);
+
+      const elevationGain = activity.total_elevation_gain ? activity.total_elevation_gain.toFixed(2) : '0';
+      const pace = calculatePace(activity.moving_time, activity.distance);
+
+      // Prepare the message
+      message = `
           🚴‍♂️🏃‍♂️🏊‍♂️ *${user.username}* был на тренировке, сейчас он дома уже:
           
           *Занятие*: ${activityType} - ${activityName}
@@ -241,15 +323,13 @@ app.post('/webhook', express.json(), (req, res) => {
           *В горку*: ${elevationGain} метров
 
           [Открыть в Страве](${activityLink})
-        `;
+      `;
+    }
 
-        bot.telegram.sendMessage(user.chatId, message, { parse_mode: 'Markdown' });
-
-        res.status(200).send('OK');
-      });
-    });
+    bot.telegram.sendMessage(user.chatId, message, { parse_mode: 'Markdown' });
+    res.status(200).send('OK');
   } catch (e) {
-    console.log(e);
+    console.error(e);
     res.status(200).send('OK');
   }
 });
