@@ -78,35 +78,6 @@ bot.command('init', async ctx => {
 
   ctx.reply(getStravaAuthUrl(ctx.chat.id))
 });
-bot.command('status', async (ctx) => {
-  const chatId = ctx.chat.id;
-
-  try {
-    const userQuery = `
-      SELECT athleteId, username, expiresAt FROM users WHERE chatId = $1
-    `;
-    const { rows } = await pool.query(userQuery, [chatId]);
-
-    if (rows.length === 0) {
-      bot.telegram.sendMessage(ctx.chat.id, '😢 *Вы не авторизованы.* Используйте /auth', {parse_mode: 'Markdown'})
-      return;
-    }
-
-    const user = rows[0];
-
-    const message = `
-      *Имя пользователя:* ${user.username}
-      *Статус:* '✅ Авторизован'
-    `;
-
-    // Send the response
-    bot.telegram.sendMessage(ctx.chat.id, message, {parse_mode: 'Markdown'})
-    ctx.reply(message, { parse_mode: 'Markdown' });
-  } catch (error) {
-    console.error('Error fetching user status:', error);
-    ctx.reply('🚨 Произошла ошибка при получении статуса. Попробуйте снова позже.');
-  }
-});
 
 app.get('/auth', async (req, res) => {
   try {
@@ -361,8 +332,16 @@ app.post('/webhook', express.json(), async (req, res) => {
   }
 });
 
+app.get('/ping', (req, res) => {
+  res.status(200).send({status: 'ok'});
+});
+
 app.listen(process.env.PORT, () => {
   console.log(`Server running on port ${process.env.PORT} ${process.env.APP_URL}`);
+
+  setInterval(async () => {
+    await fetch(`${process.env.APP_URL}/ping`)
+  }, 14 * 60 * 1000);
 });
 
 bot.launch();
