@@ -222,6 +222,16 @@ function calculatePace(movingTime: number, distance: number) {
   return `${mins}:${paddedSecs}`;
 }
 
+type User = {
+  id: number,
+  athleteid: number,
+  username: string,
+  chatid: string,
+  accesstoken: string,
+  refreshtoken: string,
+  expiresat: Date,
+}
+
 app.post('/webhook', express.json(), async (req, res) => {
   try {
     const { object_type, object_id, aspect_type, owner_id } = req.body;
@@ -232,7 +242,7 @@ app.post('/webhook', express.json(), async (req, res) => {
     }
 
     const result = await pool.query('SELECT * FROM users WHERE athleteId = $1', [owner_id]);
-    const user = result.rows[0];
+    const user: User = result.rows[0];
 
     if (!user) {
       console.log(`No user found with athleteId ${owner_id}`);
@@ -241,7 +251,7 @@ app.post('/webhook', express.json(), async (req, res) => {
 
     console.log(`[ACTIVITY] User:`, user);
 
-    if (user.expiresAt <= new Date()) {
+    if (user.expiresat <= new Date()) {
       const response = await fetch('https://www.strava.com/api/v3/oauth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -249,7 +259,7 @@ app.post('/webhook', express.json(), async (req, res) => {
           client_id: process.env.STRAVA_ID,
           client_secret: process.env.STRAVA_SECRET,
           grant_type: 'refresh_token',
-          refresh_token: user.refreshToken,
+          refresh_token: user.refreshtoken,
         }),
       });
 
@@ -257,24 +267,24 @@ app.post('/webhook', express.json(), async (req, res) => {
 
       await pool.query(
         `UPDATE users 
-          SET accessToken = $1, refreshToken = $2, expiresAt = $3 
-          WHERE athleteId = $4`,
+          SET accesstoken = $1, refreshtoken = $2, expiresat = $3 
+          WHERE athleteid = $4`,
         [
           refreshResult.access_token,
           refreshResult.refresh_token,
           refreshResult.expires_at,
-          user.athleteId,
+          user.athleteid,
         ]
       );
 
-      user.accessToken = refreshResult.access_token;
-      user.refreshToken = refreshResult.refresh_token;
-      user.expiresAt = refreshResult.expires_at;
+      user.accesstoken = refreshResult.access_token;
+      user.refreshtoken = refreshResult.refresh_token;
+      user.expiresat = refreshResult.expires_at;
 
       console.log('Tokens refreshed successfully!');
     }
   
-    const activity = await new Promise<any>((resolve) => strava.activities.get({ id: object_id, access_token: user.accessToken }, (err, activity) => {
+    const activity = await new Promise<any>((resolve) => strava.activities.get({ id: object_id, access_token: user.accesstoken }, (err, activity) => {
       if (err) {
         console.error('Error fetching activity details from Strava:', err);
         return res.status(200).send('OK');
@@ -324,7 +334,7 @@ app.post('/webhook', express.json(), async (req, res) => {
       `;
     }
 
-    bot.telegram.sendMessage(user.chatId, message, { parse_mode: 'Markdown' });
+    bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
     res.status(200).send('OK');
   } catch (e) {
     console.error(e);
