@@ -4,14 +4,26 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
 
+type User = {
+  id: number,
+  athleteid: number,
+  username: string,
+  chatid: string,
+  accesstoken: string,
+  refreshtoken: string,
+  expiresat: Date,
+  xp: number,
+  level: number,
+}
+
 dotenv.config();
 
 const bot = new Telegraf(process.env.BOT_SECRET!);
 const app = express();
 const pool = new Pool({
-  connectionString: process.env.DB_URL, // Use DATABASE_URL from your environment variables
+  connectionString: process.env.DB_URL,
   ssl: {
-   rejectUnauthorized: false, // For local development and cloud environments
+   rejectUnauthorized: false,
   },
   });
 
@@ -21,6 +33,75 @@ strava.config({
   access_token: process.env.STRAVA_TOKEN!,
   redirect_uri: process.env.APP_URL!,
 });
+
+const XP_CONFIG = {
+  running: 10,  // 1km
+  cycling: 5,   // 1km
+  swimming: 50, // 1km
+  default: 10,  // 100kkal for other activities
+};
+
+function calculateXP(activity: any): number {
+  const { type, distance, calories } = activity;
+
+  const xpPerUnit = XP_CONFIG[type] ?? XP_CONFIG.default;
+  const isKnownActivity = Object.keys(XP_CONFIG).includes(type);
+
+  let xp = isKnownActivity ? (distance / 1000) * xpPerUnit : (calories / 100) * xpPerUnit;
+
+  return Math.floor(xp);
+}
+
+async function getNextLevelInfo(userId: number): Promise<{ level: number; xpToNext: number | null; levelUp: boolean }> {
+  const userQuery = await pool.query<User>('SELECT xp, level FROM users WHERE id = $1', [userId]);
+  if (!userQuery.rowCount) return;
+
+  let { xp, level } = userQuery.rows[0];
+
+  return await findNewLevel(level, xp);
+}
+
+async function findNewLevel(level: number, xp: number): Promise<{ level: number; xpToNext: number | null; levelUp: boolean }> {
+  const nextLevelQuery = await pool.query('SELECT required_xp FROM levels WHERE level = $1', [level + 1]);
+
+  if (!nextLevelQuery.rowCount) {
+    return { level, xpToNext: null, levelUp: false }; // max level probably
+  }
+
+  const requiredXp = nextLevelQuery.rows[0].required_xp;
+
+  if (xp < requiredXp) {
+    return { level, xpToNext: requiredXp - xp, levelUp: false };
+  }
+
+  return findNewLevel(level + 1, xp);
+}
+
+async function updateUserXP(userId, earnedXP) {
+  await pool.query('UPDATE users SET xp = xp + $1 WHERE id = $2', [earnedXP, userId]);
+  const { level, xpToNext, levelUp } = await getNextLevelInfo(userId);
+
+  if (levelUp) {
+    await pool.query('UPDATE users SET level = level + 1 WHERE id = $1', [userId]);
+    return { earnedXP, level, levelUp: true };
+  }
+  return { earnedXP, level, xpToNext, levelUp: false };
+}
+
+async function processActivity(activity, userId) {
+  const earnedXP = await calculateXP(activity);
+  const xpUpdate = await updateUserXP(userId, earnedXP);
+
+  let message = `🏅 Вы получили *${earnedXP} XP* за тренировку!\n`;
+  if (xpUpdate.levelUp) {
+    message += `🎉 Поздравляем, у вас новый уровень: *${xpUpdate.level}*!`;
+  } else {
+    message += `📈 Осталось *${xpUpdate.xpToNext} XP* до следующего уровня.`;
+  }
+  
+  return message;
+}
+
 
 function getStravaAuthUrl(chatId: any) {
   return `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_ID}&response_type=code&redirect_uri=${process.env.APP_URL}/auth/&approval_prompt=force&scope=read,activity:read&state=${chatId}`;
@@ -45,39 +126,39 @@ bot.command('auth', (ctx: any) => {
     }
   );
 });
-bot.command('init', async ctx => {
-  try {
-    const createUsersTable = `
-      CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        athleteId INTEGER UNIQUE,
-        username TEXT NOT NULL,
-        chatId BIGINT NOT NULL,
-        accessToken TEXT NOT NULL,
-        refreshToken TEXT NOT NULL,
-        expiresAt INTEGER NOT NULL
-      )
-    `;
-    const table = await pool.query(createUsersTable, []);
-    console.log(`[DB] OK`, table);
-  } catch (e: any) {
-    console.log('[DB ERROR]', e);
-    return ctx.reply(e.message);
-  }
+// bot.command('init', async ctx => {
+//   try {
+//     const createUsersTable = `
+//       CREATE TABLE IF NOT EXISTS users (
+//         id INTEGER PRIMARY KEY AUTOINCREMENT,
+//         athleteId INTEGER UNIQUE,
+//         username TEXT NOT NULL,
+//         chatId BIGINT NOT NULL,
+//         accessToken TEXT NOT NULL,
+//         refreshToken TEXT NOT NULL,
+//         expiresAt INTEGER NOT NULL
+//       )
+//     `;
+//     const table = await pool.query(createUsersTable, []);
+//     console.log(`[DB] OK`, table);
+//   } catch (e: any) {
+//     console.log('[DB ERROR]', e);
+//     return ctx.reply(e.message);
+//   }
 
-  try {
-    await strava.pushSubscriptions.create({
-      client_id: process.env.STRAVA_ID!,
-      client_secret: process.env.STRAVA_SECRET!,
-      callback_url: `${process.env.APP_URL}/webhook`,
-      verify_token: 'WEBHOOK_VERIFY',
-    });
-  } catch (e: any) {
-    console.log('[SUB ERROR]', e.error)
-  }
+//   try {
+//     await strava.pushSubscriptions.create({
+//       client_id: process.env.STRAVA_ID!,
+//       client_secret: process.env.STRAVA_SECRET!,
+//       callback_url: `${process.env.APP_URL}/webhook`,
+//       verify_token: 'WEBHOOK_VERIFY',
+//     });
+//   } catch (e: any) {
+//     console.log('[SUB ERROR]', e.error)
+//   }
 
-  ctx.reply(getStravaAuthUrl(ctx.chat.id))
-});
+//   ctx.reply(getStravaAuthUrl(ctx.chat.id))
+// });
 
 app.get('/auth', async (req, res) => {
   try {
@@ -220,16 +301,6 @@ function calculatePace(movingTime: number, distance: number) {
   const paddedSecs = secs.toString().padStart(2, '0');
 
   return `${mins}:${paddedSecs}`;
-}
-
-type User = {
-  id: number,
-  athleteid: number,
-  username: string,
-  chatid: string,
-  accesstoken: string,
-  refreshtoken: string,
-  expiresat: Date,
 }
 
 app.post('/webhook', express.json(), async (req, res) => {
