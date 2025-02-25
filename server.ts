@@ -275,13 +275,11 @@ app.get('/auth', async (req, res) => {
 });
 bot.command("me", async (ctx) => {
   try {
-    const chatId = ctx.message.chat.id;
-
-    const result = await pool.query<User>("SELECT * FROM users WHERE chatId = $1", [chatId]);
+    const result = await pool.query<User>("SELECT * FROM users WHERE telegram_id = $1", [ctx.from.id]);
     const user = result.rows[0];
 
     if (!user) {
-      return ctx.reply("🚨 Вы не зарегистрированы в системе. Пожалуйста, подключите свой аккаунт Strava. Команда /auth");
+      return ctx.reply("🚨 Нет такого");
     }
 
     const levelInfo = await getLevelInfo(user.xp);
@@ -291,7 +289,6 @@ bot.command("me", async (ctx) => {
     ━━━━━━━━━━━━━━━━━━
     ▫️ *Уровень:* ${levelInfo.level}
     ▫️ *Опыт:* ${user.xp} / ${levelInfo.total_required_xp} XP
-    ▫️ *До следующего уровня:* ${levelInfo.required_xp - user.xp} XP
     ━━━━━━━━━━━━━━━━━━
     `;
 
@@ -453,7 +450,7 @@ app.get('/patch-notes', async (_, res) => {
       *Обновление 1.1 – Уровни!* 🚀
 
       *Что нового?*
-      
+
         ✅ XP начисляется за все виды активности.
         ✅ Разные коэффициенты XP. Силовые тренировки на прямую зависит от потраченных калорий, а цикличные - от расстояния.
         ✅ Новая команда /me – показывает текущий LVL и прогресс до следующего.
