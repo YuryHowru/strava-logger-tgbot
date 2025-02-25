@@ -16,16 +16,20 @@ type User = {
   level: number,
 }
 
+type LevelInfo = {
+  level: number,
+  required_xp: number;
+  total_required_xp: number;
+}
+
 dotenv.config();
 
 const bot = new Telegraf(process.env.BOT_SECRET!);
 const app = express();
 const pool = new Pool({
   connectionString: process.env.DB_URL,
-  ssl: {
-   rejectUnauthorized: false,
-  },
-  });
+  ssl: false,
+});
 
 strava.config({
   client_id: process.env.STRAVA_ID!,
@@ -35,11 +39,24 @@ strava.config({
 });
 
 const XP_CONFIG = {
-  running: 10,  // 1km
-  cycling: 5,   // 1km
-  swimming: 50, // 1km
-  default: 10,  // 100kkal for other activities
+  // Run walk
+  Run: 10, TrailRun: 12, Walk: 6, Hike: 8, VirtualRun: 10,
+
+  // Bike
+  Ride: 5, MountainBikeRide: 7, GravelRide: 6, ['E-BikeRide']: 3, VirtualRide: 5,
+
+  // Water
+  Swim: 50, Rowing: 30, Kayak: 25, StandUpPaddling: 20,
+
+  // Winter
+  AlpineSki: 12, BackcountrySki: 15, NordicSki: 14, Snowboard: 10,
+
+  // Strength and others
+  Workout: 10, Yoga: 5, WeightTraining: 12, Crossfit: 15, IceSkate: 10, InlineSkate: 8, RockClimb: 15,
+
+  default: 10
 };
+const MAX_LVL = 20;
 
 function calculateXP(activity: any): number {
   const { type, distance, calories } = activity;
@@ -48,72 +65,120 @@ function calculateXP(activity: any): number {
   const isKnownActivity = Object.keys(XP_CONFIG).includes(type);
 
   let xp = isKnownActivity ? (distance / 1000) * xpPerUnit : (calories / 100) * xpPerUnit;
-
+  console.log(xp, Math.floor(xp));
   return Math.floor(xp);
 }
+async function getLevelInfo(xp: number): Promise<LevelInfo & { total_required_xp: number }> {
+  const levelsQuery = await pool.query<LevelInfo>(`
+    SELECT * FROM levels ORDER BY level ASC
+  `);
 
-async function getNextLevelInfo(userId: number): Promise<{ level: number; xpToNext: number | null; levelUp: boolean }> {
-  const userQuery = await pool.query<User>('SELECT xp, level FROM users WHERE id = $1', [userId]);
-  if (!userQuery.rowCount) return;
+  const levels = levelsQuery.rows;
+  if (!levels.length) throw new Error(`[DB] Levels table is empty!`);
 
-  let { xp, level } = userQuery.rows[0];
 
-  return await findNewLevel(level, xp);
+  const currentLevel = levels.reduce((prev, lvl) => xp < lvl.total_required_xp ? prev : lvl, levels[0]);
+
+  return currentLevel;
 }
 
-async function findNewLevel(level: number, xp: number): Promise<{ level: number; xpToNext: number | null; levelUp: boolean }> {
-  const nextLevelQuery = await pool.query('SELECT required_xp FROM levels WHERE level = $1', [level + 1]);
+async function updateUserXP(user: User, earnedXP: number) {
+  const newLevelInfo = await getLevelInfo(user.xp + earnedXP);
 
-  if (!nextLevelQuery.rowCount) {
-    return { level, xpToNext: null, levelUp: false }; // max level probably
-  }
+  await pool.query('UPDATE users SET xp = $1, level = $2 WHERE id = $3', [user.xp + earnedXP, newLevelInfo.level, user.id]);
 
-  const requiredXp = nextLevelQuery.rows[0].required_xp;
-
-  if (xp < requiredXp) {
-    return { level, xpToNext: requiredXp - xp, levelUp: false };
-  }
-
-  return findNewLevel(level + 1, xp);
+  return newLevelInfo;
 }
 
-async function updateUserXP(userId, earnedXP) {
-  await pool.query('UPDATE users SET xp = xp + $1 WHERE id = $2', [earnedXP, userId]);
-  const { level, xpToNext, levelUp } = await getNextLevelInfo(userId);
+async function prepareGamifyMessage({ activity, user }: { activity: any; user: User }) {
+  const earnedXP = calculateXP(activity);
+  const newLevelInfo = await updateUserXP(user, earnedXP);
+  const currentXP = user.xp + earnedXP;
+  const xpNeeded = newLevelInfo.required_xp;
 
-  if (levelUp) {
-    await pool.query('UPDATE users SET level = level + 1 WHERE id = $1', [userId]);
-    return { earnedXP, level, levelUp: true };
-  }
-  return { earnedXP, level, xpToNext, levelUp: false };
-}
+  const levelUp = newLevelInfo.level > user.level;
+  const levelUpMessage = levelUp ? `🎉 *LEVEL UP!* Добро пожаловать на *${newLevelInfo.level} уровень!* 🚀\n` : "";
 
-async function processActivity(activity, userId) {
-  const earnedXP = await calculateXP(activity);
-  const xpUpdate = await updateUserXP(userId, earnedXP);
+  let message = "";
+  if (levelUpMessage) message += levelUpMessage + "\n";
+  message += `🔥 +${earnedXP} XP за тренировку!\n`;
+  message += `🏆 Уровень: *${newLevelInfo.level}*, ${currentXP}/${xpNeeded} XP`;
 
-  let message = `🏅 Вы получили *${earnedXP} XP* за тренировку!\n`;
-  if (xpUpdate.levelUp) {
-    message += `🎉 Поздравляем, у вас новый уровень: *${xpUpdate.level}*!`;
-  } else {
-    message += `📈 Осталось *${xpUpdate.xpToNext} XP* до следующего уровня.`;
-  }
-  
   return message;
 }
 
+async function refreshUserToken(user) {
+  
+    const response = await fetch('https://www.strava.com/api/v3/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: process.env.STRAVA_ID,
+        client_secret: process.env.STRAVA_SECRET,
+        grant_type: 'refresh_token',
+        refresh_token: user.refreshtoken,
+      }),
+    });
 
+    const refreshResult = await response.json();
+
+    await pool.query(
+      `UPDATE users 
+        SET accesstoken = $1, refreshtoken = $2, expiresat = $3 
+        WHERE athleteid = $4`,
+      [
+        refreshResult.access_token,
+        refreshResult.refresh_token,
+        refreshResult.expires_at,
+        user.athleteid,
+      ]
+    );
+
+    user.accesstoken = refreshResult.access_token;
+    user.refreshtoken = refreshResult.refresh_token;
+    user.expiresat = refreshResult.expires_at;
+
+    console.log('Tokens refreshed successfully!');
+  
+}
+function prepareActivityMessage({ activity, user }) {
+  const activityType = activity.type;
+  const activityName = activity.name;
+  const movingTime = formatTime(activity.moving_time);
+
+  if (activity.distance) {
+    const distanceKm = (activity.distance / 1000).toFixed(2);
+
+    const elevationGain = activity.total_elevation_gain ? activity.total_elevation_gain.toFixed(2) : '0';
+    const pace = calculatePace(activity.moving_time, activity.distance);
+
+    return `
+        🚴‍♂️🏃‍♂️🏊‍♂️ *${user.username}* был на тренировке, сейчас он дома уже:
+        
+        *Занятие*: ${activityType} - ${activityName}
+        *Дистанция*: ${distanceKm} км
+        *Время*: ${movingTime}
+        *Темп*: ${pace} мин/км 🔥
+        *В горку*: ${elevationGain} метров
+    `;
+  }
+
+  return `
+      💪 *${user.username}* завершил силовую тренировку! 
+
+      *Занятие*: ${activityType} - ${activityName}
+      *Продолжительность*: ${movingTime}
+      *Потраченные калории*: ${activity.calories.toFixed(2)} ккал
+    `;
+}
 function getStravaAuthUrl(chatId: any) {
   return `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_ID}&response_type=code&redirect_uri=${process.env.APP_URL}/auth/&approval_prompt=force&scope=read,activity:read&state=${chatId}`;
 }
-
-
 app.use((req, res, next) => {
   if (req.url !== '/healthz') console.log(`[${req.method}] ${req.url}`);
   res.setHeader('Content-Type', 'application/json');
   next();
 });
-
 bot.command('ping', ctx => ctx.reply('pong'));
 bot.command('credit', ctx => ctx.replyWithMarkdownV2('[GitHub Repository](https://github.com/YuryHowru/strava-logger-tgbot)'));
 bot.command('auth', (ctx: any) => {
@@ -201,10 +266,38 @@ app.get('/auth', async (req, res) => {
     res.status(500).send('Server error');
   }
 });
+bot.command("level", async (ctx) => {
+  try {
+    const chatId = ctx.message.chat.id;
+
+    const result = await pool.query<User>("SELECT * FROM users WHERE chatId = $1", [chatId]);
+    const user = result.rows[0];
+
+    if (!user) {
+      return ctx.reply("🚨 Вы не зарегистрированы в системе. Пожалуйста, подключите свой аккаунт Strava. Команда /auth");
+    }
+
+    const levelInfo = await getLevelInfo(user.xp);
+
+    const message = `
+👤 *${user.username}*
+    ━━━━━━━━━━━━━━━━━━
+    ▫️ *Уровень:* ${levelInfo.level}
+    ▫️ *Опыт:* ${user.xp} / ${levelInfo.total_required_xp} XP
+    ▫️ *До следующего уровня:* ${levelInfo.required_xp - user.xp} XP
+    ━━━━━━━━━━━━━━━━━━
+    `;
+
+    ctx.reply(message, { parse_mode: "Markdown" });
+  } catch (error) {
+    console.error("Error processing /level command:", error);
+    ctx.reply("❌ Произошла ошибка при получении информации. Попробуйте позже.");
+  }
+});
 
 app.get('/healthz', (_, res) => res.status(200).send({status: 'running'}));
 
-app.get('/setup-webhooks', async (req, res) => {
+app.get('/setup-webhooks', async (_, res) => {
   try {
     await strava.pushSubscriptions.create({
       client_id: process.env.STRAVA_ID!,
@@ -219,7 +312,7 @@ app.get('/setup-webhooks', async (req, res) => {
   }
 })
 
-app.get('/subs', async (req, res) => {
+app.get('/subs', async (_, res) => {
   try {
     const list = await strava.pushSubscriptions.list();
     console.log(list);
@@ -230,7 +323,7 @@ app.get('/subs', async (req, res) => {
   }
 })
 
-app.get('/users', async (req, res) => {
+app.get('/users', async (_, res) => {
   try {
     const allUsers = await pool.query(`SELECT * FROM USERS`);
     console.log(allUsers);
@@ -242,7 +335,7 @@ app.get('/users', async (req, res) => {
   }
 });
 
-app.get('/setup-table', async (req, res) => {
+app.get('/setup-table', async (_, res) => {
   try {
     const createUsersTable = `
       CREATE TABLE IF NOT EXISTS users (
@@ -303,6 +396,13 @@ function calculatePace(movingTime: number, distance: number) {
   return `${mins}:${paddedSecs}`;
 }
 
+const MOCK_ACTIVITY = {
+  id: 123456789,
+  type: 'Run',
+  distance: 5000, // 5 км
+  calories: 400,
+};
+
 app.post('/webhook', express.json(), async (req, res) => {
   try {
     const { object_type, object_id, aspect_type, owner_id } = req.body;
@@ -312,100 +412,39 @@ app.post('/webhook', express.json(), async (req, res) => {
       return res.status(200).send('OK');
     }
 
-    const result = await pool.query('SELECT * FROM users WHERE athleteId = $1', [owner_id]);
-    const user: User = result.rows[0];
+    const result = await pool.query<User>('SELECT * FROM users WHERE athleteId = $1', [owner_id]);
+    const user = result.rows[0];
 
     if (!user) {
-      console.log(`No user found with athleteId ${owner_id}`);
+      console.error(`[DB] User id ${owner_id} not found.`);
       return res.status(200).send('OK');
     }
 
     console.log(`[ACTIVITY] User:`, user);
 
-    if (user.expiresat <= new Date()) {
-      const response = await fetch('https://www.strava.com/api/v3/oauth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: process.env.STRAVA_ID,
-          client_secret: process.env.STRAVA_SECRET,
-          grant_type: 'refresh_token',
-          refresh_token: user.refreshtoken,
-        }),
-      });
-
-      const refreshResult = await response.json();
-
-      await pool.query(
-        `UPDATE users 
-          SET accesstoken = $1, refreshtoken = $2, expiresat = $3 
-          WHERE athleteid = $4`,
-        [
-          refreshResult.access_token,
-          refreshResult.refresh_token,
-          refreshResult.expires_at,
-          user.athleteid,
-        ]
-      );
-
-      user.accesstoken = refreshResult.access_token;
-      user.refreshtoken = refreshResult.refresh_token;
-      user.expiresat = refreshResult.expires_at;
-
-      console.log('Tokens refreshed successfully!');
-    }
+    // if (user.expiresat <= new Date()) await refreshUserToken(user);
   
-    const activity = await new Promise<any>((resolve) => strava.activities.get({ id: object_id, access_token: user.accesstoken }, (err, activity) => {
-      if (err) {
-        console.error('Error fetching activity details from Strava:', err);
-        return res.status(200).send('OK');
-      }
-      resolve(activity);
-    }));
-    
-    const activityType = activity.type;
-    const activityName = activity.name;
-    const movingTime = formatTime(activity.moving_time);
+    // const activity = await new Promise<any>((resolve) => strava.activities.get({ id: object_id, access_token: user.accesstoken }, (err, activity) => {
+    //   if (err) {
+    //     console.error('Error fetching activity details from Strava:', err);
+    //     return res.status(200).send('OK');
+    //   }
+    //   resolve(activity);
+    // }));
+    const activity = MOCK_ACTIVITY;
+  
+    const activityDetailsMessage = prepareActivityMessage({ activity, user });
+    const gamifyMessage = user.level !== MAX_LVL ? await prepareGamifyMessage({ activity, user }) : `Lvl ${MAX_LVL}. (Max level reached)`;
     const activityLink = `https://www.strava.com/activities/${object_id}`;
-    let message: string;
-    if (activityType === 'WeightTraining' || activityType === 'Workout') {
-      // Если тренировка не имеет дистанции (например, силовая тренировка)
-      const calories = activity.calories ? `${activity.calories.toFixed(2)} ккал` : 'неизвестно';
-      const description = activity.description || 'Нет описания';
-  
-      message = `
-        💪 *${user.username}* завершил силовую тренировку! 
-  
-        *Занятие*: ${activityType} - ${activityName}
-        *Продолжительность*: ${movingTime}
-        *Потраченные калории*: ${calories}
-        *Описание*: ${description}
-  
-        [Открыть в Страве](${activityLink})
-      `;
-    } else {
-      // Prepare activity details
+    const message = `
+      ${activityDetailsMessage}
 
-      const distanceKm = (activity.distance / 1000).toFixed(2);
+      ${gamifyMessage}
 
-      const elevationGain = activity.total_elevation_gain ? activity.total_elevation_gain.toFixed(2) : '0';
-      const pace = calculatePace(activity.moving_time, activity.distance);
-
-      // Prepare the message
-      message = `
-          🚴‍♂️🏃‍♂️🏊‍♂️ *${user.username}* был на тренировке, сейчас он дома уже:
-          
-          *Занятие*: ${activityType} - ${activityName}
-          *Дистанция*: ${distanceKm} км
-          *Время*: ${movingTime}
-          *Темп*: ${pace} мин/км 🔥
-          *В горку*: ${elevationGain} метров
-
-          [Открыть в Страве](${activityLink})
-      `;
-    }
-
+      [Открыть в Страве](${activityLink})
+    `;
     bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
+    
     res.status(200).send('OK');
   } catch (e) {
     console.error(e);
@@ -413,7 +452,7 @@ app.post('/webhook', express.json(), async (req, res) => {
   }
 });
 
-app.get('/ping', (req, res) => {
+app.get('/ping', (_, res) => {
   res.status(200).send({status: 'ok'});
 });
 
