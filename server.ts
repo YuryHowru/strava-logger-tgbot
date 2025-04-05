@@ -72,11 +72,11 @@ function calculateEarnedXp(activity: any): number {
 
   if (DISTANCE_BASED_ACTIVITIES.includes(type)) {
     return Math.floor((distance / 1000) * xpPerUnit);
-  } 
-  
+  }
+
   return Math.floor((calories / 100) * xpPerUnit);
 }
-async function getLevelInfo(xp: number): Promise<LevelInfo & { total_required_xp: number }> {
+async function findLevelInDb(xp: number): Promise<LevelInfo & { total_required_xp: number }> {
   const levelsQuery = await pool.query<LevelInfo>(`
     SELECT * FROM levels ORDER BY level ASC
   `);
@@ -87,35 +87,33 @@ async function getLevelInfo(xp: number): Promise<LevelInfo & { total_required_xp
   return levels.find(({ total_required_xp }) => total_required_xp > xp)!;
 }
 
-async function updateUserXP(user: User, earnedXp: number) {
+async function calculateLevelInfo({ activity, user }: { activity: any; user: User }): Promise<{ earnedXp: number, newLevel: number, nextLevelRequiredXp: number }> {
+  const earnedXp = calculateEarnedXp(activity);
   const newXp = user.xp + earnedXp;
-  const newLevelInfo = await getLevelInfo(newXp);
+  const newLevelInfo = await findLevelInDb(newXp);
 
-  await pool.query('UPDATE users SET xp = $1, level = $2 WHERE id = $3', [newXp, newLevelInfo.level, user.id]);
-
-  return newLevelInfo;
+  return { earnedXp: earnedXp, newLevel: newLevelInfo.level, nextLevelRequiredXp: newLevelInfo.total_required_xp }
 }
 
-async function prepareGamifyMessage({ activity, user }: { activity: any; user: User }) {
-  const earnedXp = calculateEarnedXp(activity);
-  const newLevelInfo = await updateUserXP(user, earnedXp);
-  const newXp = user.xp + earnedXp;
+function prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp }) {
+  if (user.level === MAX_LVL) {
+    return `Lvl ${MAX_LVL}. (Max level reached)`
+  }
 
-  const levelUp = newLevelInfo.level > user.level;
-  const levelUpMessage = levelUp ? `🎉 *LEVEL UP!* Добро пожаловать на *${newLevelInfo.level} уровень!* 🚀\n` : "";
+  const newXp = user.xp + earnedXp;
+  const levelUpMessage = newLevel > user.level ? `🎉 *LEVEL UP!* Добро пожаловать на *${newLevel} уровень!* 🚀\n` : "";
 
   let message = "";
   if (levelUpMessage) message += levelUpMessage + "\n";
   message += `
     🔥 +${earnedXp} XP за тренировку!
-    🏆 Уровень: *${newLevelInfo.level}*, ${newXp}/${newLevelInfo.total_required_xp} XP
+    🏆 Уровень: *${newLevel}*, ${newXp}/${nextLevelRequiredXp} XP
   `;
 
   return message;
 }
 
-async function refreshUserToken(user) {
-  
+async function refreshUserToken(user: User) {
     const response = await fetch('https://www.strava.com/api/v3/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -130,8 +128,8 @@ async function refreshUserToken(user) {
     const refreshResult = await response.json();
 
     await pool.query(
-      `UPDATE users 
-        SET accesstoken = $1, refreshtoken = $2, expiresat = $3 
+      `UPDATE users
+        SET accesstoken = $1, refreshtoken = $2, expiresat = $3
         WHERE athleteid = $4`,
       [
         refreshResult.access_token,
@@ -146,7 +144,7 @@ async function refreshUserToken(user) {
     user.expiresat = refreshResult.expires_at;
 
     console.log('Tokens refreshed successfully!');
-  
+
 }
 function prepareActivityMessage({ activity, user }) {
   const activityType = activity.type;
@@ -161,7 +159,7 @@ function prepareActivityMessage({ activity, user }) {
 
     return `
         🚴‍♂️🏃‍♂️🏊‍♂️ *${user.username}* был на тренировке, сейчас он дома уже:
-        
+
         *Занятие*: ${activityType} - ${activityName}
         *Дистанция*: ${distanceKm} км
         *Время*: ${movingTime}
@@ -171,7 +169,7 @@ function prepareActivityMessage({ activity, user }) {
   }
 
   return `
-      💪 *${user.username}* завершил силовую тренировку! 
+      💪 *${user.username}* завершил силовую тренировку!
 
       *Занятие*: ${activityType} - ${activityName}
       *Продолжительность*: ${movingTime}
@@ -232,6 +230,18 @@ bot.command('auth', (ctx: any) => {
 //   ctx.reply(getStravaAuthUrl(ctx.chat.id))
 // });
 
+function getFullActivityInfo({ activityId, userAccessToken }) {
+  return new Promise<any>((resolve, reject) => strava.activities.get({ id: activityId, access_token: userAccessToken }, (err, activity) => {
+      if (err) {
+        return reject({ message: 'Error fetching activity details from Strava', err });
+      }
+
+      resolve(activity);
+    }));
+}
+
+
+
 app.get('/auth', async (req, res) => {
   try {
     const { code, state } = req.query as Record<string, string>;
@@ -266,7 +276,7 @@ app.get('/auth', async (req, res) => {
     console.log(`[AUTH] User:`, user);
 
     bot.telegram.sendMessage(chatId, `🎉 ${athlete.firstname} ${athlete.lastname} профессионально подключил Страву!`);
-    
+
     res.send('Всё сработало, можно закрывать это окно.');
   } catch (error) {
     console.log(error);
@@ -282,10 +292,10 @@ bot.command("me", async (ctx) => {
       return ctx.reply("🚨 Нет такого");
     }
 
-    const levelInfo = await getLevelInfo(user.xp);
+    const levelInfo = await findLevelInDb(user.xp);
 
     const message = `
-👤 *${user.username}*
+    👤 *${user.username}*
     ━━━━━━━━━━━━━━━━━━
     ▫️ *Уровень:* ${levelInfo.level}
     ▫️ *Опыт:* ${user.xp} / ${levelInfo.total_required_xp} XP
@@ -303,7 +313,7 @@ bot.command('help', (ctx) => {
   📌 *Список команд*
 
   🔹 /auth — подключить аккаунт Strava.
-  🔹 /info — посмотреть свой уровень и XP.
+  🔹 /me — посмотреть свой уровень и XP.
   🔹 /top — посмотреть топ-10 пользователей по уровню.
   🔹 /credit — ссылка на GitHub репозиторий проекта.
   🔹 /ping — pong.
@@ -315,9 +325,9 @@ bot.command('help', (ctx) => {
 bot.command('top', async (ctx) => {
   try {
     const topUsersQuery = await pool.query<User>(`
-      SELECT username, level, xp 
-      FROM users 
-      ORDER BY level DESC, xp DESC 
+      SELECT username, level, xp
+      FROM users
+      ORDER BY level DESC, xp DESC
       LIMIT 10;
     `);
 
@@ -427,7 +437,7 @@ function formatTime(seconds: number) {
 
 function calculatePace(movingTime: number, distance: number) {
   if (distance === 0) return "N/A";
-  
+
   const paceInSecondsPerKm = movingTime / (distance / 1000);
   const mins = Math.floor(paceInSecondsPerKm / 60);
   const secs = Math.floor(paceInSecondsPerKm % 60);
@@ -437,42 +447,15 @@ function calculatePace(movingTime: number, distance: number) {
   return `${mins}:${paddedSecs}`;
 }
 
-app.get('/patch-notes', async (_, res) => {
-  try {
-    const result = await pool.query<User>('SELECT chatid FROM users WHERE id = 1');
-    const user = result.rows[0];
-
-    if (!user) {
-      return res.status(404).send({ error: 'User with id=1 not found' });
-    }
-
-    const message = `
-      *Обновление 1.1 – Уровни!* 🚀
-
-      *Что нового?*
-
-        ✅ XP начисляется за все виды активности.
-        ✅ Разные коэффициенты XP. Силовые тренировки на прямую зависит от потраченных калорий, а цикличные - от расстояния.
-        ✅ Новая команда /me – показывает текущий LVL и прогресс до следующего.
-        ✅ Команда /top – топ участников по уровню.
-    `;
-
-    await bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
-    res.status(200).send({ status: 'ok', message: 'Patch notes sent' });
-  } catch (error) {
-    console.error('[PATCH-NOTES] Error:', error);
-    res.status(500).send({ error: 'Internal server error' });
-  }
-});
-
-
 app.post('/webhook', express.json(), async (req, res) => {
+  res.status(200).send('OK'); // must respond instantly because Strava will repeat POST if not ?
+
   try {
     const { object_type, object_id, aspect_type, owner_id } = req.body;
-
     console.log(`[ACTIVITY] ${object_type} ${aspect_type}`);
+
     if (!(object_type === 'activity' && aspect_type === 'create')) {
-      return res.status(200).send('OK');
+      return;
     }
 
     const result = await pool.query<User>('SELECT * FROM users WHERE athleteId = $1', [owner_id]);
@@ -480,23 +463,22 @@ app.post('/webhook', express.json(), async (req, res) => {
 
     if (!user) {
       console.error(`[DB] User id ${owner_id} not found.`);
-      return res.status(200).send('OK');
+      return;
     }
 
-    console.log(`[ACTIVITY] User:`, user);
+    console.log(`[ACTIVITY] User:`, { user: user.username, level: user.level, xp: user.xp });
 
     if (user.expiresat <= new Date()) await refreshUserToken(user);
-  
-    const activity = await new Promise<any>((resolve) => strava.activities.get({ id: object_id, access_token: user.accesstoken }, (err, activity) => {
-      if (err) {
-        console.error('Error fetching activity details from Strava:', err);
-        return res.status(200).send('OK');
-      }
-      resolve(activity);
-    }));
-  
+
+    const activity = await getFullActivityInfo({ activityId: object_id, userAccessToken: user.accesstoken });
+
+    const { newLevel, earnedXp, nextLevelRequiredXp } = await calculateLevelInfo({ activity, user })
+    const newXp = user.xp + earnedXp;
+    await pool.query('UPDATE users SET xp = $1, level = $2, last_activity = $3  WHERE id = $4', [newXp, newLevel, Date.now(), user.id]);
+
     const activityDetailsMessage = prepareActivityMessage({ activity, user });
-    const gamifyMessage = user.level !== MAX_LVL ? await prepareGamifyMessage({ activity, user }) : `Lvl ${MAX_LVL}. (Max level reached)`;
+    const gamifyMessage = prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp});
+
     const activityLink = `https://www.strava.com/activities/${object_id}`;
     const message = `
       ${activityDetailsMessage}
@@ -505,12 +487,10 @@ app.post('/webhook', express.json(), async (req, res) => {
 
       [Открыть в Страве](${activityLink})
     `;
+
     bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
-    
-    res.status(200).send('OK');
   } catch (e) {
     console.error(e);
-    res.status(200).send('OK');
   }
 });
 
@@ -521,6 +501,7 @@ app.get('/ping', (_, res) => {
 app.listen(process.env.PORT, () => {
   console.log(`Server running on port ${process.env.PORT} ${process.env.APP_URL}`);
 
+  // hack to keep Render free server awake (sleep after 15min inactivity)
   setInterval(async () => {
     await fetch(`${process.env.APP_URL}/ping`)
   }, 14 * 60 * 1000);
