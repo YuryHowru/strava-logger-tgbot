@@ -1,5 +1,5 @@
 import { Telegraf } from "telegraf";
-import strava from 'strava-v3';
+import strava, { DetailedActivityResponse } from 'strava-v3';
 import express from 'express';
 import dotenv from 'dotenv';
 import { Pool } from 'pg';
@@ -231,7 +231,7 @@ bot.command('auth', (ctx: any) => {
 // });
 
 function getFullActivityInfo({ activityId, userAccessToken }) {
-  return new Promise<any>((resolve, reject) => strava.activities.get({ id: activityId, access_token: userAccessToken }, (err, activity) => {
+  return new Promise<DetailedActivityResponse>((resolve, reject) => strava.activities.get({ id: activityId, access_token: userAccessToken }, (err, activity) => {
       if (err) {
         return reject({ message: 'Error fetching activity details from Strava', err });
       }
@@ -451,7 +451,7 @@ app.post('/webhook', express.json(), async (req, res) => {
   res.status(200).send('OK'); // must respond instantly because Strava will repeat POST if not ?
 
   try {
-    const { object_type, object_id, aspect_type, owner_id } = req.body;
+    const { object_type, object_id, aspect_type, owner_id, event_time } = req.body;
     console.log(`[ACTIVITY] ${object_type} ${aspect_type}`);
 
     if (!(object_type === 'activity' && aspect_type === 'create')) {
@@ -474,7 +474,6 @@ app.post('/webhook', express.json(), async (req, res) => {
 
     const { newLevel, earnedXp, nextLevelRequiredXp } = await calculateLevelInfo({ activity, user })
     const newXp = user.xp + earnedXp;
-    await pool.query('UPDATE users SET xp = $1, level = $2, last_activity = $3  WHERE id = $4', [newXp, newLevel, Date.now(), user.id]);
 
     const activityDetailsMessage = prepareActivityMessage({ activity, user });
     const gamifyMessage = prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp});
@@ -489,6 +488,13 @@ app.post('/webhook', express.json(), async (req, res) => {
     `;
 
     bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
+
+    await pool.query(`
+      UPDATE users
+      SET xp = $1, level = $2, last_activity = to_timestamp($3)
+      WHERE id = $4`,
+      [newXp, newLevel, event_time, user.id]
+    );
   } catch (e) {
     console.error(e);
   }
