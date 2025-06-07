@@ -60,7 +60,11 @@ const XP_CONFIG = {
   AlpineSki: 12, BackcountrySki: 15, NordicSki: 14, Snowboard: 10,
 
   // Strength and others
-  Workout: 10, Yoga: 5, WeightTraining: 12, Crossfit: 15, IceSkate: 10, InlineSkate: 8, RockClimb: 15,
+  Workout: 25,
+  Yoga: 12.5,
+  WeightTraining: 30,
+  Crossfit: 37.5,
+  RockClimb: 37.5,
 
   default: 10
 };
@@ -239,7 +243,6 @@ function getFullActivityInfo({ activityId, userAccessToken }) {
       resolve(activity);
     }));
 }
-
 
 
 app.get('/auth', async (req, res) => {
