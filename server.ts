@@ -272,7 +272,7 @@ app.get('/auth', async (req, res) => {
       refresh_token,     // $3
       expires_at,        // $4
       chatId,            // $5
-      athlete.username,  // $6
+      athlete.username ?? `${athlete.firstname} ${athlete.lastname}`,  // $6
     ];
 
     const user = await pool.query(queryText, values);
