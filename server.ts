@@ -31,7 +31,7 @@ const bot = new Telegraf(process.env.BOT_SECRET!);
 const app = express();
 const pool = new Pool({
     connectionString: process.env.DB_URL,
-    ssl: true,
+    ssl: false,
 });
 
 strava.config({
