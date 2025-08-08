@@ -739,18 +739,29 @@ function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp }) {
 }
 
 bot.command('addxp', async (ctx) => {
-    // First, check if the sender is an admin
+    // Проверка на админские права
     const senderResult = await pool.query<User>(`SELECT is_admin FROM users WHERE telegram_id = $1`, [ctx.from.id]);
-
     const sender = senderResult.rows[0];
     if (!sender || !sender.is_admin) {
         return ctx.reply('❌ Жук.');
     }
 
-    const [_, username, xpToAddStr] = ctx.message.text.split(' ');
+    // Разбиваем сообщение на части: команда, слова в юзернейме и XP
+    const parts = ctx.message.text.split(' ');
+
+    // Если частей меньше 3 (команда, юзернейм, XP), то это ошибка
+    if (parts.length < 3) {
+        return ctx.reply('Использование: /addxp <username> <XP>');
+    }
+
+    // Последняя часть — это XP
+    const xpToAddStr = parts[parts.length - 1];
     const xpToAdd = parseInt(xpToAddStr);
 
-    if (!username || !xpToAdd) {
+    // Собираем все слова между командой и XP в единую строку
+    const username = parts.slice(1, parts.length - 1).join(' ');
+
+    if (!username || isNaN(xpToAdd)) {
         return ctx.reply('Использование: /addxp <username> <XP>');
     }
 
@@ -765,9 +776,10 @@ bot.command('addxp', async (ctx) => {
         const newXp = user.xp + xpToAdd;
         const newLevelInfo = await findLevelInDb(newXp);
         const newLevel = newLevelInfo.level;
+
         await pool.query(`UPDATE users SET xp = $1, level = $2 WHERE id = $3`, [newXp, newLevel, user.id]);
 
-        const nextLevelRequiredXp = newLevelInfo.total_required_xp;
+        const nextLevelRequiredXp = newLevelInfo.total_required_xp; // Исправлено: total_required_xp
         const message = prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp });
         ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error) {
