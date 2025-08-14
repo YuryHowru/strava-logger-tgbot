@@ -204,8 +204,8 @@ const XP_CONFIG = {
 };
 const MAX_LVL = 20;
 
-const getStreakData = (user: User, activityDate: Date) => {
-    const today = new Date(activityDate);
+const getStreakData = (user: User, activityDate: number) => {
+    const today = new Date(activityDate * 1000);
     today.setHours(0, 0, 0, 0);
 
     let newStreak = user.streak_count;
@@ -740,7 +740,6 @@ function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp }) {
 }
 
 bot.command('addxp', async (ctx) => {
-    // Проверка на админские права
     const senderResult = await pool.query<User>(`SELECT is_admin FROM users WHERE telegram_id = $1`, [ctx.from.id]);
     const sender = senderResult.rows[0];
     if (!sender || !sender.is_admin) {
