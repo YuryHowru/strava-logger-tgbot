@@ -729,12 +729,13 @@ function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp }) {
     }
 
     const newXp = user.xp + xpToAdd;
-    const levelUpMessage = newLevel > user.level ? `🎉 *LEVEL UP!* 🚀 ` : '';
+    const levelUpMessage = newLevel > user.level
+        ? `🏆 🎉 *LEVEL UP!* 🚀 Уровень: *${newLevel}*`
+        : `🏆 Уровень: *${newLevel}*`;
 
     return `
     🔥 ${user.username} получает +${xpToAdd} XP! А так можно было?
-    🏆 ${levelUpMessage}Уровень: *${newLevel}*, ${newXp}/${nextLevelRequiredXp} XP
-
+    ${levelUpMessage}, ${newXp}/${nextLevelRequiredXp} XP
   `;
 }
 
@@ -746,19 +747,15 @@ bot.command('addxp', async (ctx) => {
         return ctx.reply('❌ Жук.');
     }
 
-    // Разбиваем сообщение на части: команда, слова в юзернейме и XP
     const parts = ctx.message.text.split(' ');
 
-    // Если частей меньше 3 (команда, юзернейм, XP), то это ошибка
     if (parts.length < 3) {
         return ctx.reply('Использование: /addxp <username> <XP>');
     }
 
-    // Последняя часть — это XP
     const xpToAddStr = parts[parts.length - 1];
     const xpToAdd = parseInt(xpToAddStr);
 
-    // Собираем все слова между командой и XP в единую строку
     const username = parts.slice(1, parts.length - 1).join(' ');
 
     if (!username || isNaN(xpToAdd)) {
@@ -779,7 +776,7 @@ bot.command('addxp', async (ctx) => {
 
         await pool.query(`UPDATE users SET xp = $1, level = $2 WHERE id = $3`, [newXp, newLevel, user.id]);
 
-        const nextLevelRequiredXp = newLevelInfo.total_required_xp; // Исправлено: total_required_xp
+        const nextLevelRequiredXp = newLevelInfo.total_required_xp;
         const message = prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp });
         ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error) {
