@@ -729,13 +729,11 @@ function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp }) {
     }
 
     const newXp = user.xp + xpToAdd;
-    const levelUpMessage = newLevel > user.level
-        ? `🏆 🎉 *LEVEL UP!* 🚀 Уровень: *${newLevel}*`
-        : `🏆 Уровень: *${newLevel}*`;
+    const levelUpMessage = newLevel > user.level ? `🎉 LEVEL UP! 🚀 ` : '';
 
     return `
     🔥 ${user.username} получает +${xpToAdd} XP! А так можно было?
-    ${levelUpMessage}, ${newXp}/${nextLevelRequiredXp} XP
+    🏆 ${levelUpMessage}Уровень: ${newLevel}, ${newXp}/${nextLevelRequiredXp} XP
   `;
 }
 
@@ -777,7 +775,7 @@ bot.command('addxp', async (ctx) => {
 
         const nextLevelRequiredXp = newLevelInfo.total_required_xp;
         const message = prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp });
-        ctx.reply(message, { parse_mode: 'Markdown' });
+        ctx.reply(message);
     } catch (error) {
         console.error('Error in /addxp command:', error);
     }
