@@ -208,11 +208,14 @@ const getStreakData = (user: User, activityDate: number) => {
     const today = new Date(activityDate * 1000);
     today.setHours(0, 0, 0, 0);
 
-    let newStreak = user.streak_count;
+    const FIXED_MULTIPLIER = 1.25;
+
+    let newStreak = 1;
     let xpMultiplier = 1;
+
     let message = `
 🚀 Серия тренировок - 1 день.
-Продолжив завтра, получаешь *1.25x multiplier*!
+Продолжив завтра, получишь бонус *${FIXED_MULTIPLIER}x*!
     `;
 
     const getDaysWord = (num: number) => {
@@ -224,40 +227,41 @@ const getStreakData = (user: User, activityDate: number) => {
     };
 
     if (!user.last_activity) {
-        newStreak = 1;
         return { message, xpMultiplier, newStreak };
     }
 
     const lastDate = new Date(user.last_activity);
     lastDate.setHours(0, 0, 0, 0);
-
     const dayDifference = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
 
     if (dayDifference > 1) {
-        newStreak = 1;
         return { message, xpMultiplier, newStreak };
     }
 
     if (dayDifference === 1) {
         newStreak = user.streak_count + 1;
-        xpMultiplier = Math.pow(1.25, newStreak - 1);
-        const multiplierForNextDay = Math.pow(1.25, newStreak);
+        xpMultiplier = FIXED_MULTIPLIER;
 
         message = `
 💥 Серия тренировок — *${newStreak} ${getDaysWord(newStreak)} подряд*!!
-Завтра за тренировки ты получишь *${multiplierForNextDay.toFixed(2)}x* к XP!
+Активен бонус серии: *${FIXED_MULTIPLIER}x* к XP!
         `;
         return { message, xpMultiplier, newStreak };
     }
 
+    // Если тренировка в тот же день (кейс 3)
     if (dayDifference === 0) {
         newStreak = user.streak_count;
-        xpMultiplier = Math.pow(1.25, newStreak - 1);
-        const multiplierForNextDay = Math.pow(1.25, newStreak);
+        // Если серия уже была накоплена (>1 дня), бонус действует и на вторую тренировку за день
+        xpMultiplier = newStreak > 1 ? FIXED_MULTIPLIER : 1;
 
         message = `
 💪 Легенда. Несколько тренировок в один день.
-Завтра за тренировки ты получишь *${multiplierForNextDay.toFixed(2)}x* к XP!
+${
+    newStreak > 1
+        ? `Бонус серии *${FIXED_MULTIPLIER}x* всё ещё работает!`
+        : `Продолжай завтра, чтобы получить бонус *${FIXED_MULTIPLIER}x*!`
+}
         `;
         return { message, xpMultiplier, newStreak };
     }
