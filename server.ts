@@ -828,6 +828,7 @@ app.listen(process.env.PORT, () => {
     // hack to keep Render free server awake (sleep after 15min inactivity)
     setInterval(async () => {
         await fetch(`${process.env.APP_URL}/ping`);
+        await checkAndSendXmasMessage(bot);
     }, 14 * 60 * 1000);
 });
 
@@ -892,5 +893,60 @@ bot.command('addxp', async (ctx) => {
         errorLog('ADMIN', 'Error in /addxp', error);
     }
 });
+
+const XMAS_CHAT_ID = -100123456789;
+const TIMEZONE_OFFSET = 2;
+const TRIGGER_HOURS = [8, 18];
+
+const XMAS_MESSAGES = [
+    '🎅 Дед Мороз следит за вашими Strava профилями. Плохим детям — только силовые на ноги в Новом Году.',
+    '🍾 Шампанское — это изотоник? Друг спрашивает...',
+    '⛷️ На улице холодно? Это просто атмосфера под новогоднюю пробежку!',
+    '🏊‍♂️ Го сегодня в басик?',
+    '🥖 Бутерброд с икрой — это 250 ккал. Я ни на что не намекаю.',
+    '🥘 А майонез можно использовать как мазь для суставов? Спрашиваю для друга.',
+    '🛌 Лежать на диване — это тоже упражнение ("планка на спине"), но XP за него не дадут.',
+    '🏃‍♂️ В новом году обещаю бегать... (с) Каждый второй.',
+    '🧤 Кто потерял перчатку на тренировке? А, вы все дома... Ну тогда ладно.',
+    '📉 Ваши графики активности выглядят как кардиограмма снеговика. Давайте исправлять!',
+    '🧂 Соль задерживает воду, а диван задерживает ваш прогресс.',
+    '🎄 Эй, спортсмены! Оливье сам себя не сожжет. Го на тренировку!',
+    '🍊 Мандаринка — это 40 ккал. Есть варик легко набрать массу.',
+    '🧊 Если бегать быстро, то не холодно. Проверено.',
+    '🎁 Лучший подарок на Новый Год друзьям — это твой активный профиль в Страве!',
+    '🧨 Врывайся в новый год с двух ног (или колес), а не лицом в салат!',
+    '👀 Пока ты читал это сообщение, кто-то уже оделся на тренировку.',
+];
+
+// Состояние (чтобы не отправлять дважды в один час)
+let lastTriggeredSlot = '';
+let currentMessageIndex = 0;
+
+async function checkAndSendXmasMessage(botInstance: Telegraf) {
+    try {
+        const now = new Date();
+        // Считаем локальный час
+        const localHour = (now.getUTCHours() + TIMEZONE_OFFSET) % 24;
+        const currentDate = now.toISOString().split('T')[0]; // "2023-12-25"
+
+        // Уникальный ключ для текущего часа (например: "2023-12-25-19")
+        const currentSlot = `${currentDate}-${localHour}`;
+
+        // Логика проверки:
+        // 1. Текущий час есть в списке TRIGGER_HOURS?
+        // 2. Мы еще НЕ отрабатывали этот слот?
+        if (TRIGGER_HOURS.includes(localHour) && lastTriggeredSlot !== currentSlot) {
+            await botInstance.telegram.sendMessage(XMAS_CHAT_ID, XMAS_MESSAGES[currentMessageIndex]);
+
+            // Обновляем слот, чтобы в ближайшие 59 минут больше не писать
+            lastTriggeredSlot = currentSlot;
+            // Увеличиваем индекс для СЛЕДУЮЩЕГО раза.
+            // % XMAS_MESSAGES.length обеспечивает зацикливание (0, 1, 2 ... max ... 0, 1)
+            currentMessageIndex = (currentMessageIndex + 1) % XMAS_MESSAGES.length;
+        }
+    } catch (e) {
+        errorLog('XMAS', 'Error in Xmas logic', e);
+    }
+}
 
 bot.launch().then(() => log('INIT', 'Bot launched!'));
