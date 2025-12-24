@@ -67,42 +67,35 @@ const DISTANCE_BASED_ACTIVITIES = [
 const verbsByActivity = {
     // Бег (Run)
     Run: [
-        'намотал километры',
-        'дал джазу',
-        'разогрел асфальт',
-        'пробежался с ветерком',
-        'не пожалел кроссовки',
-        'убежал от всех проблем',
-        'тестировал свои лёгкие на прочность',
-        'проверил Флеш он или нет',
-        'устроил флешмоб с бегом',
-        '- новый Кипчоге?',
         'бегает 5 раз в неделю (нет)',
         'делает вид что бегает',
-        'оставил пыль позади',
-        'пытался обогнать вчерашнюю версию себя',
-        'исправляет ошибки GPS',
         'начинает готовиться к марафону',
         'завтра будет ходить как пингвин',
-        'пытается убежать от дедлайнов',
-        'разобрался, где заканчивается дорога',
+        'бегал, странно но факт',
+        'бегал, странно но майка сухая и совсем не пахнет',
+        'бежал, будто за ним гонятся коллекторы',
+        'просто хотел догнать автобус, но увлекся',
+        'перешел в режим "турбо-улитка"',
+        'собирает лайки своими ногами',
+        'дышал как паровоз, но не сдавался',
+        'бегал. Спонсор тренировки — сила воли и слабоумие',
     ],
     // Силовая (WeightTraining)
     WeightTraining: [
-        'поработал над силой',
-        'вспотел в зале',
-        'качнул что-то там',
         'уничтожил тренировку',
-        'работал с железом',
         'поднимал тяжести (никто не просил)',
-        'тренировал выносливость',
-        'выжал Максима три икса (что?)',
-        'стал ещё сильнее',
-        'построил новые мышцы',
-        'доказал штанге, кто здесь главный',
         'здесь могла быть ваша реклама',
         'медленно превращается в терминатора',
         'качал что угодно, но не ноги',
+        'искал анаболическое окно (и нашел сквозняк)',
+        'поднял самооценку (и немного железа)',
+        'делал селфи в спортзале вместо подходов',
+        'ждал, пока освободится скамья для жима',
+        'пытался стать шириной с дверной проем',
+        'разбрасывал гантели по всему залу',
+        'качал бицепс, чтобы рубашки трещали',
+        'готовится к битве с боссом',
+        'включил режим "Халк крушить"',
     ],
     // Плавание (PoolSwim)
     PoolSwim: [
@@ -112,9 +105,17 @@ const verbsByActivity = {
         'пересёк бассейн много раз',
         'мешал другим на водной дорожке',
         'чувствовал себя рыбой',
-        'пережил цунами в бассейне',
-        'побил рекорд Немо',
         'пошёл ко дну',
+        'плыл хорошо, но не быстро',
+        'плыл почти как Корнилова',
+        'пошёл ко дну',
+        'теперь пахнет хлоркой, как элитная уборщица',
+        'выпил половину бассейна, пока плыл',
+        'притворялся дельфином, но получился тюлень',
+        'боролся с запотевшими очками (очки победили)',
+        'Майкл Фелпс на минималках',
+        'теперь вода в ухе будет булькать до вечера',
+        'отрастил жабры',
     ],
     // Другие активности
     TrailRun: ['пробежался по тропе', 'покорил трейл', 'исследовал новые тропы'],
@@ -213,7 +214,7 @@ const getStreakData = (user: User, activityDate: number) => {
     let newStreak = 1;
     let xpMultiplier = 1;
 
-    let message = `
+    let streakMessage = `
 🚀 Серия тренировок - 1 день.
 Продолжив завтра, получишь бонус *${FIXED_MULTIPLIER}x*!
     `;
@@ -227,7 +228,7 @@ const getStreakData = (user: User, activityDate: number) => {
     };
 
     if (!user.last_activity) {
-        return { message, xpMultiplier, newStreak };
+        return { message: streakMessage, xpMultiplier, newStreak };
     }
 
     const lastDate = new Date(user.last_activity);
@@ -235,18 +236,18 @@ const getStreakData = (user: User, activityDate: number) => {
     const dayDifference = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
 
     if (dayDifference > 1) {
-        return { message, xpMultiplier, newStreak };
+        return { message: streakMessage, xpMultiplier, newStreak };
     }
 
     if (dayDifference === 1) {
         newStreak = user.streak_count + 1;
         xpMultiplier = FIXED_MULTIPLIER;
 
-        message = `
+        streakMessage = `
 💥 Серия тренировок — *${newStreak} ${getDaysWord(newStreak)} подряд*!!
 Активен бонус серии: *${FIXED_MULTIPLIER}x* к XP!
         `;
-        return { message, xpMultiplier, newStreak };
+        return { message: streakMessage, xpMultiplier, newStreak };
     }
 
     // Если тренировка в тот же день (кейс 3)
@@ -255,7 +256,7 @@ const getStreakData = (user: User, activityDate: number) => {
         // Если серия уже была накоплена (>1 дня), бонус действует и на вторую тренировку за день
         xpMultiplier = newStreak > 1 ? FIXED_MULTIPLIER : 1;
 
-        message = `
+        streakMessage = `
 💪 Легенда. Несколько тренировок в один день.
 ${
     newStreak > 1
@@ -263,11 +264,63 @@ ${
         : `Продолжай завтра, чтобы получить бонус *${FIXED_MULTIPLIER}x*!`
 }
         `;
-        return { message, xpMultiplier, newStreak };
+        return { message: streakMessage, xpMultiplier, newStreak };
     }
 
-    return { message, xpMultiplier, newStreak };
+    return { streakMessage, xpMultiplier, newStreak };
 };
+
+function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifulBonusMessage: string } {
+    let bonusXp = 0;
+    const messages: string[] = [];
+
+    if (activity.distance && activity.distance > 0) {
+        const km = activity.distance / 1000;
+        const kmStr = km.toFixed(2);
+        const [intPart, decPart] = kmStr.split('.');
+
+        if (decPart === '00') {
+            bonusXp += 20;
+            messages.push('🎯 Снайпер! Ровная дистанция (+20 XP)');
+        } else if (intPart === decPart || (intPart.length === 1 && decPart[0] === intPart && decPart[1] === intPart)) {
+            bonusXp += 30;
+            messages.push(`💎 Магия чисел (${kmStr} км) (+30 XP)`);
+        }
+    }
+
+    if (activity.moving_time && activity.moving_time > 0) {
+        const minutes = Math.floor((activity.moving_time % 3600) / 60);
+        const seconds = activity.moving_time % 60;
+
+        if (seconds === 0 && minutes > 0) {
+            bonusXp += 15;
+            messages.push('⌚️ Педант! Ровное время (+15 XP)');
+        }
+        // Паттерн: Синхронизация -> 12:12, 44:44
+        else if (minutes === seconds && minutes !== 0) {
+            bonusXp += 15;
+            messages.push(`⏱ Синхронизация времени ${minutes}:${seconds} (+15 XP)`);
+        }
+    }
+
+    if (activity.calories && activity.calories > 0) {
+        const cal = Math.round(activity.calories);
+        const calStr = cal.toString();
+
+        if (cal % 100 === 0) {
+            bonusXp += 20;
+            messages.push(`🍔 Ровный аппетит (${cal} ккал) (+20 XP)`);
+        } else if (cal > 10 && calStr.split('').every((char) => char === calStr[0])) {
+            bonusXp += 40;
+            messages.push(`🎰 Калорийный джекпот (${cal} ккал) (+40 XP)`);
+        }
+    }
+
+    return {
+        beautifulBonusXp: bonusXp,
+        beautifulBonusMessage: messages.join('\n'),
+    };
+}
 
 function calculateEarnedXp(activity: any, xpMultiplier: number): number {
     const { type, distance, calories } = activity;
@@ -294,12 +347,16 @@ async function calculateLevelInfo({
     activity,
     user,
     xpMultiplier,
+    beautifulBonusXp,
 }: {
     activity: any;
     user: User;
     xpMultiplier: number;
+    beautifulBonusXp: number;
 }): Promise<{ earnedXp: number; newLevel: number; nextLevelRequiredXp: number }> {
-    const earnedXp = calculateEarnedXp(activity, xpMultiplier);
+    const baseXp = calculateEarnedXp(activity, xpMultiplier);
+    const earnedXp = baseXp + beautifulBonusXp;
+
     const newXp = user.xp + earnedXp;
     const newLevelInfo = await findLevelInDb(newXp);
 
@@ -685,21 +742,29 @@ app.post('/webhook', express.json(), async (req, res) => {
         if (user.expiresat <= new Date()) await refreshUserToken(user);
 
         const activity = await getFullActivityInfo({ activityId: object_id, userAccessToken: user.accesstoken });
-        const { message: streakMessage, newStreak, xpMultiplier } = getStreakData(user, event_time);
-        const { newLevel, earnedXp, nextLevelRequiredXp } = await calculateLevelInfo({ activity, user, xpMultiplier });
+        const { streakMessage, newStreak, xpMultiplier } = getStreakData(user, event_time);
+        const { beautifulBonusXp, beautifulBonusMessage } = getBeautifulStatus(activity);
+        const { newLevel, earnedXp, nextLevelRequiredXp } = await calculateLevelInfo({
+            activity,
+            user,
+            xpMultiplier,
+            beautifulBonusXp,
+        });
         const newXp = user.xp + earnedXp;
         const activityDetailsMessage = prepareActivityMessage({ activity, user });
         const gamifyMessage = prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp, xpMultiplier });
 
         const activityLink = `https://www.strava.com/activities/${object_id}`;
-        const message = `
+        let message = `
       ${activityDetailsMessage}
 ${gamifyMessage}
 ${streakMessage}
-
-[Открыть в Страве](${activityLink})
     `;
 
+        if (beautifulBonusMessage) {
+            message += `\n${beautifulBonusMessage}\n`;
+        }
+        message += `\n\n[Открыть в Страве](${activityLink})`;
         bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
 
         await pool.query(
