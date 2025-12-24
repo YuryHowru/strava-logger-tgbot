@@ -27,6 +27,24 @@ type LevelInfo = {
 
 dotenv.config();
 
+// --- LOGGING HELPER ---
+const log = (tag: string, message: string, data?: any) => {
+    const timestamp = new Date().toISOString();
+    if (data) {
+        console.log(`[${timestamp}] [${tag}] ${message}`, JSON.stringify(data, null, 2));
+    } else {
+        console.log(`[${timestamp}] [${tag}] ${message}`);
+    }
+};
+
+const errorLog = (tag: string, message: string, error: any) => {
+    const timestamp = new Date().toISOString();
+    console.error(`[${timestamp}] [${tag}] ❌ ERROR: ${message}`, error);
+};
+// ----------------------
+
+log('INIT', 'Starting application...');
+
 const bot = new Telegraf(process.env.BOT_SECRET!);
 const app = express();
 const pool = new Pool({
@@ -228,6 +246,7 @@ const getStreakData = (user: User, activityDate: number) => {
     };
 
     if (!user.last_activity) {
+        log('LOGIC', 'First activity ever for user. No streak bonus.');
         return { message: streakMessage, xpMultiplier, newStreak };
     }
 
@@ -235,13 +254,18 @@ const getStreakData = (user: User, activityDate: number) => {
     lastDate.setHours(0, 0, 0, 0);
     const dayDifference = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
 
+    log('LOGIC', `Day difference: ${dayDifference}`);
+
     if (dayDifference > 1) {
+        log('LOGIC', 'Streak lost (difference > 1 day). Resetting to 1.');
         return { message: streakMessage, xpMultiplier, newStreak };
     }
 
     if (dayDifference === 1) {
         newStreak = user.streak_count + 1;
         xpMultiplier = FIXED_MULTIPLIER;
+
+        log('LOGIC', `Streak maintained! New streak: ${newStreak}, Multiplier: ${xpMultiplier}`);
 
         streakMessage = `
 💥 Серия тренировок — *${newStreak} ${getDaysWord(newStreak)} подряд*!!
@@ -256,6 +280,8 @@ const getStreakData = (user: User, activityDate: number) => {
         // Если серия уже была накоплена (>1 дня), бонус действует и на вторую тренировку за день
         xpMultiplier = newStreak > 1 ? FIXED_MULTIPLIER : 1;
 
+        log('LOGIC', `Same day activity. Keeping streak: ${newStreak}. Multiplier active: ${xpMultiplier > 1}`);
+
         streakMessage = `
 💪 Легенда. Несколько тренировок в один день.
 ${
@@ -267,6 +293,8 @@ ${
         return { message: streakMessage, xpMultiplier, newStreak };
     }
 
+    // fallback (negative diff? timezone issues?)
+    log('LOGIC', 'Fallback streak case hit');
     return { streakMessage, xpMultiplier, newStreak };
 };
 
@@ -282,9 +310,11 @@ function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifu
         if (decPart === '00') {
             bonusXp += 20;
             messages.push('🎯 Снайпер! Ровная дистанция (+20 XP)');
+            log('LOGIC', `Bonus: Sniper (${kmStr} km)`);
         } else if (intPart === decPart || (intPart.length === 1 && decPart[0] === intPart && decPart[1] === intPart)) {
             bonusXp += 30;
             messages.push(`💎 Магия чисел (${kmStr} км) (+30 XP)`);
+            log('LOGIC', `Bonus: Magic Numbers (${kmStr} km)`);
         }
     }
 
@@ -294,12 +324,14 @@ function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifu
 
         if (seconds === 0 && minutes > 0) {
             bonusXp += 15;
-            messages.push('⌚️ Педант! Ровное время (+15 XP)');
+            messages.push('⌚️ Ровное время! (+15 XP)');
+            log('LOGIC', `Bonus: Pedant (${minutes} min)`);
         }
         // Паттерн: Синхронизация -> 12:12, 44:44
         else if (minutes === seconds && minutes !== 0) {
             bonusXp += 15;
-            messages.push(`⏱ Синхронизация времени ${minutes}:${seconds} (+15 XP)`);
+            messages.push(`⏱ Синхронизация времени ${minutes}:${seconds} ! (+15 XP)`);
+            log('LOGIC', `Bonus: Sync Time (${minutes}:${seconds})`);
         }
     }
 
@@ -310,9 +342,11 @@ function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifu
         if (cal % 100 === 0) {
             bonusXp += 20;
             messages.push(`🍔 Ровный аппетит (${cal} ккал) (+20 XP)`);
+            log('LOGIC', `Bonus: Appetite (${cal} kcal)`);
         } else if (cal > 10 && calStr.split('').every((char) => char === calStr[0])) {
             bonusXp += 40;
             messages.push(`🎰 Калорийный джекпот (${cal} ккал) (+40 XP)`);
+            log('LOGIC', `Bonus: Jackpot (${cal} kcal)`);
         }
     }
 
@@ -325,13 +359,19 @@ function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifu
 function calculateEarnedXp(activity: any, xpMultiplier: number): number {
     const { type, distance, calories } = activity;
     const xpPerUnit = XP_CONFIG[type] ?? XP_CONFIG.default;
+    log('LOGIC', `Calculating XP for type: ${type}, XP/Unit: ${xpPerUnit}, Multiplier: ${xpMultiplier}`);
 
+    let calculated = 0;
     if (DISTANCE_BASED_ACTIVITIES.includes(type)) {
-        return Math.floor((distance / 1000) * xpPerUnit * xpMultiplier);
+        calculated = Math.floor((distance / 1000) * xpPerUnit * xpMultiplier);
+        log('LOGIC', `XP Calculation (Distance): ${distance}m -> ${calculated} XP`);
+    } else {
+        calculated = Math.floor((calories / 100) * xpPerUnit * xpMultiplier);
+        log('LOGIC', `XP Calculation (Calories): ${calories} kcal -> ${calculated} XP`);
     }
-
-    return Math.floor((calories / 100) * xpPerUnit * xpMultiplier);
+    return calculated;
 }
+
 async function findLevelInDb(xp: number): Promise<LevelInfo & { total_required_xp: number }> {
     const levelsQuery = await pool.query<LevelInfo>(`
     SELECT * FROM levels ORDER BY level ASC
@@ -340,7 +380,9 @@ async function findLevelInDb(xp: number): Promise<LevelInfo & { total_required_x
     const levels = levelsQuery.rows;
     if (!levels.length) throw new Error(`[DB] Levels table is empty!`);
 
-    return levels.find(({ total_required_xp }) => total_required_xp > xp)!;
+    const foundLevel = levels.find(({ total_required_xp }) => total_required_xp > xp)!;
+    log('DB', `Found level info`, foundLevel);
+    return foundLevel;
 }
 
 async function calculateLevelInfo({
@@ -356,6 +398,8 @@ async function calculateLevelInfo({
 }): Promise<{ earnedXp: number; newLevel: number; nextLevelRequiredXp: number }> {
     const baseXp = calculateEarnedXp(activity, xpMultiplier);
     const earnedXp = baseXp + beautifulBonusXp;
+
+    log('LOGIC', `Total Earned XP: ${earnedXp} (Base: ${baseXp} + Bonus: ${beautifulBonusXp})`);
 
     const newXp = user.xp + earnedXp;
     const newLevelInfo = await findLevelInDb(newXp);
@@ -409,8 +453,9 @@ async function refreshUserToken(user: User) {
     user.refreshtoken = refreshResult.refresh_token;
     user.expiresat = refreshResult.expires_at;
 
-    console.log('Tokens refreshed successfully!');
+    log('AUTH', `Refreshed token for user ${user.username} (${user.athleteid})`);
 }
+
 function prepareActivityMessage({ activity, user }) {
     const activityType = activity.type;
     const activityName = activity.name;
@@ -443,67 +488,44 @@ function prepareActivityMessage({ activity, user }) {
       *Потраченные калории*: ${activity.calories.toFixed(2)} ккал
     `;
 }
+
 function getStravaAuthUrl(chatId: any) {
     return `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_ID}&response_type=code&redirect_uri=${process.env.APP_URL}/auth/&approval_prompt=force&scope=read,activity:read&state=${chatId}`;
 }
+
 app.use((req, res, next) => {
-    if (req.url !== '/healthz') console.log(`[${req.method}] ${req.url}`);
+    if (req.url !== '/healthz') {
+        log('HTTP', `${req.method} ${req.url} - IP: ${req.ip}`);
+    }
     res.setHeader('Content-Type', 'application/json');
     next();
 });
-bot.command('ping', (ctx) => ctx.reply('pong'));
-bot.command('credit', (ctx) =>
-    ctx.replyWithMarkdownV2('[GitHub Repository](https://github.com/YuryHowru/strava-logger-tgbot)')
-);
+
+bot.command('ping', (ctx) => {
+    ctx.reply('pong');
+});
+
+bot.command('credit', (ctx) => {
+    ctx.replyWithMarkdownV2('[GitHub Repository](https://github.com/YuryHowru/strava-logger-tgbot)');
+});
+
 bot.command('auth', (ctx: any) => {
-    console.log(ctx);
+    log('BOT', `Command /auth from ${ctx.from.id} in chat ${ctx.chat.id}`);
     ctx.reply('🤖', {
         reply_markup: {
             inline_keyboard: [[{ text: 'Авторизовать Страву', url: getStravaAuthUrl(ctx.chat.id) }]],
         },
     });
 });
-// bot.command('init', async ctx => {
-//   try {
-//     const createUsersTable = `
-//       CREATE TABLE IF NOT EXISTS users (
-//         id INTEGER PRIMARY KEY AUTOINCREMENT,
-//         athleteId INTEGER UNIQUE,
-//         username TEXT NOT NULL,
-//         chatId BIGINT NOT NULL,
-//         accessToken TEXT NOT NULL,
-//         refreshToken TEXT NOT NULL,
-//         expiresAt INTEGER NOT NULL
-//       )
-//     `;
-//     const table = await pool.query(createUsersTable, []);
-//     console.log(`[DB] OK`, table);
-//   } catch (e: any) {
-//     console.log('[DB ERROR]', e);
-//     return ctx.reply(e.message);
-//   }
-
-//   try {
-//     await strava.pushSubscriptions.create({
-//       client_id: process.env.STRAVA_ID!,
-//       client_secret: process.env.STRAVA_SECRET!,
-//       callback_url: `${process.env.APP_URL}/webhook`,
-//       verify_token: 'WEBHOOK_VERIFY',
-//     });
-//   } catch (e: any) {
-//     console.log('[SUB ERROR]', e.error)
-//   }
-
-//   ctx.reply(getStravaAuthUrl(ctx.chat.id))
-// });
 
 function getFullActivityInfo({ activityId, userAccessToken }) {
-    return new Promise<DetailedActivityResponse>((resolve, reject) =>
+    return new Promise<DetailedActivityResponse & { type: string }>((resolve, reject) =>
         strava.activities.get({ id: activityId, access_token: userAccessToken }, (err, activity) => {
             if (err) {
+                errorLog('STRAVA', `Error fetching activity ${activityId}`, err);
                 return reject({ message: 'Error fetching activity details from Strava', err });
             }
-
+            log('STRAVA', `Activity ${activityId} details fetched successfully.`);
             resolve(activity);
         })
     );
@@ -513,11 +535,12 @@ app.get('/auth', async (req, res) => {
     try {
         const { code, state } = req.query as Record<string, string>;
         const chatId = state;
+        log('AUTH', `Received auth callback code for chat ${chatId}`);
 
         const tokenResponse = await strava.oauth.getToken(code);
         const { access_token, refresh_token, expires_at, athlete } = tokenResponse;
 
-        console.log(`[AUTH] Athlete:`, athlete);
+        log('AUTH', `Got tokens for athlete: ${athlete.id} (${athlete.firstname} ${athlete.lastname})`);
 
         const queryText = `
       INSERT INTO users (athleteId, accessToken, refreshToken, expiresAt, chatId, username)
@@ -531,16 +554,16 @@ app.get('/auth', async (req, res) => {
     `;
 
         const values = [
-            athlete.id, // $1
-            access_token, // $2
-            refresh_token, // $3
-            expires_at, // $4
-            chatId, // $5
-            athlete.username ?? `${athlete.firstname} ${athlete.lastname}`, // $6
+            athlete.id,
+            access_token,
+            refresh_token,
+            expires_at,
+            chatId,
+            athlete.username ?? `${athlete.firstname} ${athlete.lastname}`,
         ];
 
-        const user = await pool.query(queryText, values);
-        console.log(`[AUTH] User:`, user);
+        await pool.query(queryText, values);
+        log('DB', `User ${athlete.id} saved/updated in DB.`);
 
         bot.telegram.sendMessage(
             chatId,
@@ -549,16 +572,19 @@ app.get('/auth', async (req, res) => {
 
         res.send('Всё сработало, можно закрывать это окно.');
     } catch (error) {
-        console.log(error);
+        errorLog('AUTH', 'Error in /auth handler', error);
         res.status(500).send('Server error');
     }
 });
+
 bot.command('me', async (ctx) => {
+    log('BOT', `Command /me from ${ctx.from.id}`);
     try {
         const result = await pool.query<User>('SELECT * FROM users WHERE telegram_id = $1', [ctx.from.id]);
         const user = result.rows[0];
 
         if (!user) {
+            log('BOT', `User ${ctx.from.id} not found in DB`);
             return ctx.reply('🚨 Нет такого');
         }
 
@@ -574,10 +600,11 @@ bot.command('me', async (ctx) => {
 
         ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error) {
-        console.error('Error processing /info command:', error);
+        errorLog('BOT', 'Error processing /me', error);
         ctx.reply('❌ Произошла ошибка при получении информации. Попробуйте позже.');
     }
 });
+
 bot.command('help', (ctx) => {
     const message = `
   📌 *Список команд*
@@ -602,6 +629,7 @@ bot.command('top', async (ctx) => {
     `);
 
         const topUsers = topUsersQuery.rows;
+        log('DB', `Fetched ${topUsers.length} users for leaderboard`);
 
         const leaderboard = topUsers
             .map((user, index) => `${index + 1}. *${user.username}* — ${user.level} lvl (${user.xp} XP)`)
@@ -611,7 +639,7 @@ bot.command('top', async (ctx) => {
 
         ctx.reply(message, { parse_mode: 'Markdown' });
     } catch (error) {
-        console.error('[DB] Error fetching leaderboard:', error);
+        errorLog('DB', 'Error fetching leaderboard', error);
         ctx.reply('❌ Ошибка при получении лидерборда. Попробуйте позже.');
     }
 });
@@ -633,65 +661,67 @@ app.get('/setup-webhooks', async (_, res) => {
     }
 });
 
-app.get('/subs', async (_, res) => {
-    try {
-        const list = await strava.pushSubscriptions.list();
-        console.log(list);
-        res.status(200).send();
-    } catch (e) {
-        console.log(e);
-        res.status(400).send();
-    }
-});
+// app.get('/subs', async (_, res) => {
+//     try {
+//         const list = await strava.pushSubscriptions.list();
+//         log('DEBUG', 'Subscriptions list:', list);
+//         res.status(200).send();
+//     } catch (e) {
+//         errorLog('DEBUG', 'Error fetching subs', e);
+//         res.status(400).send();
+//     }
+// });
 
 app.get('/users', async (_, res) => {
     try {
         const allUsers = await pool.query(`SELECT * FROM USERS`);
-        console.log(allUsers);
-
+        log('DEBUG', `Found ${allUsers.rowCount} users`);
         res.status(200).send({ status: 'ok' });
     } catch (e) {
-        console.log(e);
+        errorLog('DEBUG', 'Error fetching users', e);
         return res.status(400).send();
     }
 });
 
-app.get('/setup-table', async (_, res) => {
-    try {
-        const createUsersTable = `
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        athleteId INTEGER UNIQUE,
-        username TEXT NOT NULL,
-        chatId INTEGER NOT NULL,
-        accessToken TEXT NOT NULL,
-        refreshToken TEXT NOT NULL,
-        expiresAt INTEGER NOT NULL
-      )
-    `;
-        const table = await pool.query(createUsersTable, []);
-        console.log(`[DB] OK`, table);
-        res.status(200).send({ table });
-    } catch (e) {
-        console.log(e);
-        res.status(400).send({ error: e });
-    }
-});
+// app.get('/setup-table', async (_, res) => {
+//     try {
+//         const createUsersTable = `
+//       CREATE TABLE IF NOT EXISTS users (
+//         id SERIAL PRIMARY KEY,
+//         athleteId INTEGER UNIQUE,
+//         username TEXT NOT NULL,
+//         chatId INTEGER NOT NULL,
+//         accessToken TEXT NOT NULL,
+//         refreshToken TEXT NOT NULL,
+//         expiresAt INTEGER NOT NULL
+//       )
+//     `;
+//         const table = await pool.query(createUsersTable, []);
+//         log('SETUP', 'Table creation result:', table);
+//         res.status(200).send({ table });
+//     } catch (e) {
+//         errorLog('SETUP', 'Table creation failed', e);
+//         res.status(400).send({ error: e });
+//     }
+// });
 
-app.get('/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
+// app.get('/webhook', (req, res) => {
+//     const mode = req.query['hub.mode'];
+//     const token = req.query['hub.verify_token'];
+//     const challenge = req.query['hub.challenge'];
 
-    if (mode && token) {
-        if (mode === 'subscribe' && token === 'WEBHOOK_VERIFY') {
-            console.log('Webhook verified');
-            res.status(200).send({ 'hub.challenge': challenge });
-        } else {
-            res.sendStatus(403);
-        }
-    }
-});
+//     log('WEBHOOK', `Verification request. Mode: ${mode}, Token: ${token}`);
+
+//     if (mode && token) {
+//         if (mode === 'subscribe' && token === 'WEBHOOK_VERIFY') {
+//             log('WEBHOOK', 'Verified successfully!');
+//             res.status(200).send({ 'hub.challenge': challenge });
+//         } else {
+//             errorLog('WEBHOOK', 'Verification failed: Forbidden', null);
+//             res.sendStatus(403);
+//         }
+//     }
+// });
 
 function formatTime(seconds: number) {
     const hrs = Math.floor(seconds / 3600);
@@ -718,14 +748,14 @@ function calculatePace(movingTime: number, distance: number) {
 }
 
 app.post('/webhook', express.json(), async (req, res) => {
-    res.status(200).send('OK'); // must respond instantly because Strava will repeat POST if not ?
+    res.status(200).send('OK');
 
     try {
         const { object_type, object_id, aspect_type, owner_id, event_time } = req.body;
-        console.log(`[ACTIVITY] ${object_type} ${aspect_type}`);
-        console.log(req.body);
+        log('WEBHOOK', `📨 Received event: ${object_type} / ${aspect_type} | ID: ${object_id} | Owner: ${owner_id}`);
 
         if (!(object_type === 'activity' && aspect_type === 'create')) {
+            log('WEBHOOK', 'Event ignored (not activity creation)');
             return;
         }
 
@@ -733,24 +763,30 @@ app.post('/webhook', express.json(), async (req, res) => {
         const user = result.rows[0];
 
         if (!user) {
-            console.error(`[DB] User id ${owner_id} not found.`);
+            errorLog('WEBHOOK', `User with athleteId ${owner_id} not found in DB`, null);
             return;
         }
 
-        console.log(`[ACTIVITY] User:`, user);
+        log('WEBHOOK', `Processing activity for user: ${user.username} (ID: ${user.id})`);
 
         if (user.expiresat <= new Date()) await refreshUserToken(user);
 
         const activity = await getFullActivityInfo({ activityId: object_id, userAccessToken: user.accesstoken });
+        log('WEBHOOK', `Activity details fetched. Type: ${activity.type}, Name: ${activity.name}`);
+
         const { streakMessage, newStreak, xpMultiplier } = getStreakData(user, event_time);
         const { beautifulBonusXp, beautifulBonusMessage } = getBeautifulStatus(activity);
+
         const { newLevel, earnedXp, nextLevelRequiredXp } = await calculateLevelInfo({
             activity,
             user,
             xpMultiplier,
             beautifulBonusXp,
         });
+
         const newXp = user.xp + earnedXp;
+        log('WEBHOOK', `Finalizing: Earned ${earnedXp} XP. New Total: ${newXp}. New Level: ${newLevel}`);
+
         const activityDetailsMessage = prepareActivityMessage({ activity, user });
         const gamifyMessage = prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp, xpMultiplier });
 
@@ -765,7 +801,9 @@ ${streakMessage}
             message += `\n${beautifulBonusMessage}\n`;
         }
         message += `\n\n[Открыть в Страве](${activityLink})`;
-        bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
+
+        log('WEBHOOK', `Sending Telegram message to chat ${user.chatid}`);
+        await bot.telegram.sendMessage(user.chatid, message, { parse_mode: 'Markdown' });
 
         await pool.query(
             `
@@ -774,8 +812,9 @@ ${streakMessage}
           WHERE id = $5`,
             [newXp, newLevel, event_time, newStreak, user.id]
         );
+        log('DB', 'User stats updated successfully.');
     } catch (e) {
-        console.error(e);
+        errorLog('WEBHOOK', 'CRITICAL ERROR in webhook handler', e);
     }
 });
 
@@ -784,7 +823,7 @@ app.get('/ping', (_, res) => {
 });
 
 app.listen(process.env.PORT, () => {
-    console.log(`Server running on port ${process.env.PORT} ${process.env.APP_URL}`);
+    log('INIT', `Server running on port ${process.env.PORT} URL: ${process.env.APP_URL}`);
 
     // hack to keep Render free server awake (sleep after 15min inactivity)
     setInterval(async () => {
@@ -807,9 +846,11 @@ function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp }) {
 }
 
 bot.command('addxp', async (ctx) => {
+    log('ADMIN', `Command /addxp by ${ctx.from.id}`, ctx.message.text);
     const senderResult = await pool.query<User>(`SELECT is_admin FROM users WHERE telegram_id = $1`, [ctx.from.id]);
     const sender = senderResult.rows[0];
     if (!sender || !sender.is_admin) {
+        log('ADMIN', `Access denied for ${ctx.from.id}`);
         return ctx.reply('❌ Жук.');
     }
 
@@ -833,6 +874,7 @@ bot.command('addxp', async (ctx) => {
         const user = userResult.rows[0];
 
         if (!user) {
+            log('ADMIN', `User ${username} not found`);
             return ctx.reply(`🚨 Пользователь ${username} не найден.`);
         }
 
@@ -841,13 +883,14 @@ bot.command('addxp', async (ctx) => {
         const newLevel = newLevelInfo.level;
 
         await pool.query(`UPDATE users SET xp = $1, level = $2 WHERE id = $3`, [newXp, newLevel, user.id]);
+        log('ADMIN', `Added ${xpToAdd} XP to ${username}. New Level: ${newLevel}`);
 
         const nextLevelRequiredXp = newLevelInfo.total_required_xp;
         const message = prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp });
         ctx.reply(message);
     } catch (error) {
-        console.error('Error in /addxp command:', error);
+        errorLog('ADMIN', 'Error in /addxp', error);
     }
 });
 
-bot.launch();
+bot.launch().then(() => log('INIT', 'Bot launched!'));
