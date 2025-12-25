@@ -894,7 +894,7 @@ bot.command('addxp', async (ctx) => {
     }
 });
 
-const XMAS_CHAT_ID = -100123456789;
+const XMAS_CHAT_ID = -4211746492;
 const TIMEZONE_OFFSET = 2;
 const TRIGGER_HOURS = [8, 18];
 
