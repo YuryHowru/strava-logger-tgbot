@@ -298,7 +298,7 @@ ${
     return { streakMessage, xpMultiplier, newStreak };
 };
 
-function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifulBonusMessage: string } {
+function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifulBonusMessage: string | null } {
     let bonusXp = 0;
     const messages: string[] = [];
 
@@ -352,7 +352,7 @@ function getBeautifulStatus(activity: any): { beautifulBonusXp: number; beautifu
 
     return {
         beautifulBonusXp: bonusXp,
-        beautifulBonusMessage: messages.join('\n'),
+        beautifulBonusMessage: messages.length > 0 ? messages.join('\n') : null,
     };
 }
 
