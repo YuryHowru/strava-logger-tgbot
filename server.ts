@@ -252,7 +252,7 @@ const getStreakData = (user: User, activityDate: number) => {
 
     if (!user.last_activity) {
         log('LOGIC', 'First activity ever for user. No streak bonus.');
-        return { message: streakMessage, xpMultiplier, newStreak };
+        return { streakMessage, xpMultiplier, newStreak };
     }
 
     const lastDate = new Date(user.last_activity);
@@ -263,7 +263,7 @@ const getStreakData = (user: User, activityDate: number) => {
 
     if (dayDifference > 1) {
         log('LOGIC', 'Streak lost (difference > 1 day). Resetting to 1.');
-        return { message: streakMessage, xpMultiplier, newStreak };
+        return { streakMessage, xpMultiplier, newStreak };
     }
 
     if (dayDifference === 1) {
@@ -276,7 +276,7 @@ const getStreakData = (user: User, activityDate: number) => {
 💥 Серия тренировок — *${newStreak} ${getDaysWord(newStreak)} подряд*!!
 Активен бонус серии: *${FIXED_MULTIPLIER}x* к XP!
         `;
-        return { message: streakMessage, xpMultiplier, newStreak };
+        return { streakMessage, xpMultiplier, newStreak };
     }
 
     // Если тренировка в тот же день (кейс 3)
@@ -295,7 +295,7 @@ ${
         : `Продолжай завтра, чтобы получить бонус *${FIXED_MULTIPLIER}x*!`
 }
         `;
-        return { message: streakMessage, xpMultiplier, newStreak };
+        return { streakMessage, xpMultiplier, newStreak };
     }
 
     // fallback (negative diff? timezone issues?)
