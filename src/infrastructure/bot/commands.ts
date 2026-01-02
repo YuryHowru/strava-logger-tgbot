@@ -11,6 +11,7 @@ import { prepareAddXpMessage } from '../../features/activities/xp';
 import { User } from '../../features/activities/types';
 import { log, errorLog } from '../../shared/logger';
 import { getStravaAuthUrl } from '../strava/service';
+import { rankSystem } from '../../features/activities/constants';
 
 export function setupBotCommands(bot: Telegraf) {
     bot.command('ping', (ctx) => {
@@ -77,7 +78,7 @@ export function setupBotCommands(bot: Telegraf) {
             log('DB', `Fetched ${topUsers.length} users for leaderboard`);
 
             const leaderboard = topUsers
-                .map((user, index) => `${index + 1}. *${user.username}* — ${user.level} lvl (${user.xp} XP)`)
+                .map((user, index) => `${index + 1}. *${user.username}* — ${rankSystem[user.level]} lvl (${user.xp} XP)`)
                 .join('\n');
 
             const message = `🏆 *Лидерборд* 🏆\n\n${leaderboard}`;
