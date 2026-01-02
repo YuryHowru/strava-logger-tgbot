@@ -797,7 +797,7 @@ app.post('/webhook', express.json(), async (req, res) => {
 
         const activityLink = `https://www.strava.com/activities/${object_id}`;
         let message = `
-      ${activityDetailsMessage}
+    ${activityDetailsMessage}
 ${gamifyMessage}
 ${streakMessage}
     `;
@@ -925,28 +925,20 @@ const XMAS_MESSAGES = [
 
 // Состояние (чтобы не отправлять дважды в один час)
 let lastTriggeredSlot = '';
-let currentMessageIndex = 0;
+let currentMessageIndex = 7;
 
 async function checkAndSendXmasMessage(botInstance: Telegraf) {
     try {
         const now = new Date();
-        // Считаем локальный час
         const localHour = (now.getUTCHours() + TIMEZONE_OFFSET) % 24;
-        const currentDate = now.toISOString().split('T')[0]; // "2023-12-25"
+        const currentDate = now.toISOString().split('T')[0];
 
-        // Уникальный ключ для текущего часа (например: "2023-12-25-19")
         const currentSlot = `${currentDate}-${localHour}`;
 
-        // Логика проверки:
-        // 1. Текущий час есть в списке TRIGGER_HOURS?
-        // 2. Мы еще НЕ отрабатывали этот слот?
         if (TRIGGER_HOURS.includes(localHour) && lastTriggeredSlot !== currentSlot) {
             await botInstance.telegram.sendMessage(XMAS_CHAT_ID, XMAS_MESSAGES[currentMessageIndex]);
 
-            // Обновляем слот, чтобы в ближайшие 59 минут больше не писать
             lastTriggeredSlot = currentSlot;
-            // Увеличиваем индекс для СЛЕДУЮЩЕГО раза.
-            // % XMAS_MESSAGES.length обеспечивает зацикливание (0, 1, 2 ... max ... 0, 1)
             currentMessageIndex = (currentMessageIndex + 1) % XMAS_MESSAGES.length;
         }
     } catch (e) {

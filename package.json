@@ -3,8 +3,8 @@
     "version": "1.0.0",
     "main": "index.js",
     "scripts": {
-        "start": "node server.ts",
-        "dev": "tsx server.ts --watch"
+        "start": "tsx src/server.ts",
+        "dev": "tsx src/server.ts --watch"
     },
     "keywords": [],
     "author": "",
