@@ -78,7 +78,7 @@ export function setupBotCommands(bot: Telegraf) {
             log('DB', `Fetched ${topUsers.length} users for leaderboard`);
 
             const leaderboard = topUsers
-                .map((user, index) => `${index + 1}. *${user.username}* — ${rankSystem[user.level]} lvl (${user.xp} XP)`)
+                .map((user, index) => `${index + 1}. *${user.username}* — ${rankSystem[user.level]} (${user.xp} XP)`)
                 .join('\n');
 
             const message = `🏆 *Лидерборд* 🏆\n\n${leaderboard}`;
