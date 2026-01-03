@@ -145,7 +145,7 @@ export const XP_CONFIG: Record<string, number> = {
     VirtualRide: 5,
 
     // Water
-    Swim: 50,
+    Swim: 30,
     Rowing: 30,
     Kayak: 25,
     StandUpPaddling: 20,
