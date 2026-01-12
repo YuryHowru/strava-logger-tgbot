@@ -16,7 +16,7 @@ export function prepareActivityMessage({ activity, user, newLevel }: { activity:
         const elevationGain = activity.total_elevation_gain ? activity.total_elevation_gain.toFixed(2) : '0';
         const pace = calculatePace(activity.moving_time, activity.distance);
         return `
-        ${emojiByActivity[activityType]} ${rankSystem[newLevel]} *${user.username}* ${randomVerb}
+        ${emojiByActivity[activityType]} ${rankSystem[newLevel]} *${user.username.replaceAll('_', ' ')}* ${randomVerb}
 
         *${activityName}*
         *Дистанция*: ${distanceKm} км
