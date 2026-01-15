@@ -15,7 +15,7 @@ export async function refreshUserToken(user: User): Promise<void> {
         }),
     });
 
-    const refreshResult = await response.json();
+    const refreshResult = (await response.json()) as { access_token; refresh_token; expires_at };
 
     await pool.query(
         `UPDATE users
@@ -62,5 +62,3 @@ export async function handleStravaAuth(code: string, chatId: string): Promise<{ 
 
     return { firstname: athlete.firstname, lastname: athlete.lastname };
 }
-
-

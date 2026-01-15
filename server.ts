@@ -445,7 +445,7 @@ async function refreshUserToken(user: User) {
         }),
     });
 
-    const refreshResult = await response.json();
+    const refreshResult = await response.json() as { access_token; refresh_token; expires_at };
 
     await pool.query(
         `UPDATE users
