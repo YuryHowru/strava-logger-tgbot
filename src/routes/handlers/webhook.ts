@@ -49,16 +49,17 @@ export const webhookHandler = async (req, res) => {
         const gamifyMessage = prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp, xpMultiplier });
         const activityDetailsMessage = prepareActivityMessage({ activity, user, newLevel });
 
-        const activityLink = `https://www.strava.com/activities/${object_id}`;
         let message = `
 ${activityDetailsMessage}
-${gamifyMessage}
 ${streakMessage}
-`;
+        `;
 
         if (beautifulBonusMessage) {
             message += `\n${beautifulBonusMessage}\n`;
         }
+        message += `\n${gamifyMessage}`
+
+        const activityLink = `https://www.strava.com/activities/${object_id}`;
         message += `\n\n[Открыть в Страве](${activityLink})`;
 
         log('WEBHOOK', `Sending Telegram message to chat ${user.chatid}`);
