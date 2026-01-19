@@ -35,7 +35,7 @@ export function prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequir
     let multiMessage = '';
     if (xpMultiplier > 1) multiMessage = ` (*${xpMultiplier.toFixed(2)}x*)`;
     const levelUpMessage =
-        newLevel > user.level ? `🎉 ${user.username} теперь *${rankSystem[newLevel]}* 🚀\n` : '';
+        newLevel > user.level ? `🎉 ${user.username.replaceAll('_', ' ')} теперь *${rankSystem[newLevel]}* 🚀\n` : '';
 
     let message = '';
     if (levelUpMessage) message += levelUpMessage + '\n';
