@@ -2,7 +2,6 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { setupRoutes } from './routes/routes';
 import { createBot, launchBot } from './infrastructure/bot/config';
-import { checkAndSendXmasMessage } from './features/xmas/service';
 import { log } from './shared/logger';
 
 dotenv.config();
@@ -18,7 +17,6 @@ app.listen(process.env.PORT, () => {
     // hack to keep Render free server awake (sleep after 15min inactivity)
     setInterval(async () => {
         await fetch(`${process.env.APP_URL}/ping`);
-        await checkAndSendXmasMessage(bot);
     }, 14 * 60 * 1000);
 });
 

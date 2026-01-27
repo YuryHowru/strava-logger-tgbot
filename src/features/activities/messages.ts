@@ -27,7 +27,7 @@ export function prepareActivityMessage({ activity, user, newLevel }: { activity:
     }
 
     return `
-      ${emojiByActivity[activityType]} *${user.username.replaceAll('_', ' ')}* ${randomVerb}
+      ${emojiByActivity[activityType]} ${rankSystem[newLevel]} *${user.username.replaceAll('_', ' ')}* ${randomVerb}
 
       *${activityName}*
       *Продолжительность*: ${movingTime}
