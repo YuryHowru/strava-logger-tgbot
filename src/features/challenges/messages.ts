@@ -113,10 +113,10 @@ export function prepareChallengeFinishedMessage({
     }
 
     const badgeLine = newBadgeKeys.length
-        ? `\nНовые бейджи: ${newBadgeKeys.map((badgeKey) => `*${badgeDefinitionMap[badgeKey].title}*`).join(', ')}`
+        ? `\nНовые медали: ${newBadgeKeys.map((badgeKey) => `*${badgeDefinitionMap[badgeKey].title}*`).join(', ')}`
         : '';
     const challengeBadgeLine = newChallengeBadgeTitle
-        ? `\nНовый бейдж: *Победитель челленджа: ${newChallengeBadgeTitle}*`
+        ? `\nНовая медаль: *Победитель челленджа: ${newChallengeBadgeTitle}*`
         : '';
 
     return `🏁 *${challenge.title} завершён*\n\nПобедитель: *${winnerUsername.replaceAll(

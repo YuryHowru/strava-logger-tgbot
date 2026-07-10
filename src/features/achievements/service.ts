@@ -111,7 +111,7 @@ export function formatUnlockedBadges(badgeKeys: BadgeKey[]): string {
         return `🏅 *${badge.title}* — ${badge.description}`;
     });
 
-    return `\n🏅 *Новые бейджи*\n${lines.join('\n')}`;
+    return `\n🏅 *Новые медали*\n${lines.join('\n')}`;
 }
 
 export function prepareBadgesListMessage(
@@ -120,7 +120,7 @@ export function prepareBadgesListMessage(
     challengeWinnerBadges: ChallengeWinnerBadge[] = []
 ): string {
     if (!achievements.length && !challengeWinnerBadges.length) {
-        return `🏅 *${username.replaceAll('_', ' ')}*, у тебя пока нет бейджей. Пора исправлять.`;
+        return `🏅 *${username.replaceAll('_', ' ')}*, у тебя пока нет медалей. Пора исправлять.`;
     }
 
     const regularItems = achievements.map((achievement, index) => {
@@ -131,5 +131,5 @@ export function prepareBadgesListMessage(
         (badge, index) => `${regularItems.length + index + 1}. 🏆 *Победитель челленджа: ${badge.challenge_title}*`
     );
 
-    return `🏅 *Бейджи ${username.replaceAll('_', ' ')}*\n\n${[...regularItems, ...challengeItems].join('\n')}`;
+    return `🏅 *Медали ${username.replaceAll('_', ' ')}*\n\n${[...regularItems, ...challengeItems].join('\n')}`;
 }

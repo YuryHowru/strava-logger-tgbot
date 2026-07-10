@@ -182,16 +182,15 @@ async function handleMeCommand(ctx: BotContext): Promise<void> {
     ]);
     const rankTitle = rankSystem[levelInfo.level] ?? 'Без ранга';
     const lastActivity = user.last_activity ? user.last_activity.toLocaleDateString('ru-RU') : 'ещё не было';
+    const medalsCount = achievements.length + challengeWinnerBadges.length;
     const message = [
-        `👤 *${user.username}*`,
-        '━━━━━━━━━━━━━━━━━━',
-        `▫️ *Ранг:* ${rankTitle}`,
-        `▫️ *Уровень:* ${levelInfo.level}`,
-        `▫️ *Опыт:* ${user.xp} / ${levelInfo.total_required_xp} XP`,
-        `▫️ *Серия:* ${user.streak_count} дн.`,
-        `▫️ *Бейджи:* ${achievements.length + challengeWinnerBadges.length}`,
-        `▫️ *Последняя тренировка:* ${lastActivity}`,
-        '━━━━━━━━━━━━━━━━━━',
+        `🧍 *${user.username.replaceAll('_', ' ')}*`,
+        `🏷 *${rankTitle}* · уровень *${levelInfo.level}*`,
+        '',
+        `⚡️ *XP:* ${user.xp} / ${levelInfo.total_required_xp}`,
+        `🔥 *Серия:* ${user.streak_count} дн.`,
+        `🏅 *Медали:* ${medalsCount}`,
+        `🕒 *Последняя тренировка:* ${lastActivity}`,
     ].join('\n');
 
     await ctx.reply(message, { parse_mode: 'Markdown' });
@@ -220,7 +219,7 @@ function getHelpMessage(): string {
         '🔹 /auth — подключить аккаунт Strava.',
         '🔹 /me — посмотреть свой уровень и XP.',
         '🔹 /top — посмотреть топ-10 пользователей по уровню.',
-        '🔹 /badges — посмотреть свои бейджи.',
+        '🔹 /badges — посмотреть свои медали.',
         '🔹 /challenge — посмотреть активный челлендж.',
         '🔹 /challenge_join — вступить в активный челлендж.',
         '🔹 /challenge_start <xp|distance|activities> <days> <title> — старт челленджа.',
@@ -443,7 +442,7 @@ export function setupBotCommands(bot: Telegraf) {
     bot.command('credit', (ctx) => ctx.replyWithMarkdownV2('[GitHub Repository](https://github.com/YuryHowru/strava-logger-tgbot)'));
     bot.command('auth', createCommandHandler('Error processing /auth', buildAuthErrorMessage, (ctx) => handleAuthCommand(bot, ctx)));
     bot.command('me', createCommandHandler('Error processing /me', '❌ Произошла ошибка при получении информации. Попробуйте позже.', handleMeCommand));
-    bot.command('badges', createCommandHandler('Error processing /badges', '❌ Не смог показать бейджи. Попробуй позже.', handleBadgesCommand));
+    bot.command('badges', createCommandHandler('Error processing /badges', '❌ Не смог показать медали. Попробуй позже.', handleBadgesCommand));
     bot.command('help', handleHelpCommand);
     bot.command('top', createCommandHandler('Error fetching leaderboard', '❌ Ошибка при получении лидерборда. Попробуйте позже.', handleTopCommand));
     bot.command(
