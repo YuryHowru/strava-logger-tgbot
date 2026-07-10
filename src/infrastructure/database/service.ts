@@ -1,7 +1,7 @@
 import { pool } from './config';
 import type { Queryable } from './types';
 import type { ActivityEvent, LevelInfo, User } from '../../features/activities/types';
-import type { UserAchievement, BadgeKey } from '../../features/achievements/types';
+import type { UserAchievement, BadgeKey, ChallengeWinnerBadge } from '../../features/achievements/types';
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from '../../features/challenges/types';
 import { log } from '../../shared/logger';
 
@@ -265,9 +265,46 @@ export async function getUserAchievements(userId: number, db: Queryable = pool):
     return result.rows;
 }
 
+export async function createChallengeWinnerBadge(
+    userId: number,
+    challengeId: number,
+    challengeTitle: string,
+    db: Queryable = pool
+): Promise<ChallengeWinnerBadge | null> {
+    const result = await db.query<ChallengeWinnerBadge>(
+        `
+        INSERT INTO challenge_winner_badges (user_id, challenge_id, challenge_title)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id, challenge_id) DO NOTHING
+        RETURNING challenge_id, challenge_title, unlocked_at
+        `,
+        [userId, challengeId, challengeTitle]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function getChallengeWinnerBadges(
+    userId: number,
+    db: Queryable = pool
+): Promise<ChallengeWinnerBadge[]> {
+    const result = await db.query<ChallengeWinnerBadge>(
+        `
+        SELECT challenge_id, challenge_title, unlocked_at
+        FROM challenge_winner_badges
+        WHERE user_id = $1
+        ORDER BY unlocked_at ASC
+        `,
+        [userId]
+    );
+
+    return result.rows;
+}
+
 export async function createChallenge(
     {
         chatId,
+        title,
         metric,
         durationDays,
         createdByTelegramId,
@@ -275,6 +312,7 @@ export async function createChallenge(
         endsAt,
     }: {
         chatId: string;
+        title: string;
         metric: ChallengeMetric;
         durationDays: number;
         createdByTelegramId: number;
@@ -287,6 +325,7 @@ export async function createChallenge(
         `
         INSERT INTO chat_challenges (
             chat_id,
+            title,
             metric,
             duration_days,
             starts_at,
@@ -294,11 +333,11 @@ export async function createChallenge(
             status,
             created_by_telegram_id
         )
-        VALUES ($1, $2, $3, $4, $5, 'active', $6)
+        VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
         ON CONFLICT DO NOTHING
         RETURNING *
         `,
-        [chatId, metric, durationDays, startsAt, endsAt, createdByTelegramId]
+        [chatId, title, metric, durationDays, startsAt, endsAt, createdByTelegramId]
     );
 
     return result.rows[0] || null;

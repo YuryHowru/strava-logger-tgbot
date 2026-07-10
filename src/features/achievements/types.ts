@@ -26,3 +26,9 @@ export type UserAchievement = {
     badge_key: BadgeKey;
     unlocked_at: Date;
 };
+
+export type ChallengeWinnerBadge = {
+    challenge_id: number;
+    challenge_title: string;
+    unlocked_at: Date;
+};

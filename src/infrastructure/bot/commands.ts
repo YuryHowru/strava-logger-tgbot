@@ -8,6 +8,7 @@ import {
     getActiveChallengeByChatId,
     getChallengeParticipants,
     getChallengeStandings,
+    getChallengeWinnerBadges,
     getTopUsers,
     getUserAchievements,
     getUserByTelegramId,
@@ -174,7 +175,11 @@ async function handleMeCommand(ctx: BotContext): Promise<void> {
         return;
     }
 
-    const [levelInfo, achievements] = await Promise.all([findLevelInDb(user.xp), getUserAchievements(user.id)]);
+    const [levelInfo, achievements, challengeWinnerBadges] = await Promise.all([
+        findLevelInDb(user.xp),
+        getUserAchievements(user.id),
+        getChallengeWinnerBadges(user.id),
+    ]);
     const rankTitle = rankSystem[levelInfo.level] ?? 'Без ранга';
     const lastActivity = user.last_activity ? user.last_activity.toLocaleDateString('ru-RU') : 'ещё не было';
     const message = [
@@ -184,7 +189,7 @@ async function handleMeCommand(ctx: BotContext): Promise<void> {
         `▫️ *Уровень:* ${levelInfo.level}`,
         `▫️ *Опыт:* ${user.xp} / ${levelInfo.total_required_xp} XP`,
         `▫️ *Серия:* ${user.streak_count} дн.`,
-        `▫️ *Бейджи:* ${achievements.length}`,
+        `▫️ *Бейджи:* ${achievements.length + challengeWinnerBadges.length}`,
         `▫️ *Последняя тренировка:* ${lastActivity}`,
         '━━━━━━━━━━━━━━━━━━',
     ].join('\n');
@@ -200,8 +205,11 @@ async function handleBadgesCommand(ctx: BotContext): Promise<void> {
         return;
     }
 
-    const achievements = await getUserAchievements(user.id);
-    const message = prepareBadgesListMessage(user.username, achievements);
+    const [achievements, challengeWinnerBadges] = await Promise.all([
+        getUserAchievements(user.id),
+        getChallengeWinnerBadges(user.id),
+    ]);
+    const message = prepareBadgesListMessage(user.username, achievements, challengeWinnerBadges);
     await ctx.reply(message, { parse_mode: 'Markdown' });
 }
 
@@ -215,7 +223,7 @@ function getHelpMessage(): string {
         '🔹 /badges — посмотреть свои бейджи.',
         '🔹 /challenge — посмотреть активный челлендж.',
         '🔹 /challenge_join — вступить в активный челлендж.',
-        '🔹 /challenge_start <xp|distance|activities> <days> — старт челленджа.',
+        '🔹 /challenge_start <xp|distance|activities> <days> <title> — старт челленджа.',
         '🔹 /challenge_stop — остановить активный челлендж.',
         '🔹 /credit — ссылка на GitHub репозиторий проекта.',
         '🔹 /ping — pong.',
@@ -245,12 +253,13 @@ function parseChallengeStartInput(ctx: BotContext) {
 
     const metric = parseChallengeMetric(parts[1]);
     const durationDays = Number.parseInt(parts[2], 10);
+    const title = parts.slice(3).join(' ').trim() || 'Чат-челлендж';
 
     if (!metric || Number.isNaN(durationDays) || durationDays <= 0) {
         return null;
     }
 
-    return { metric, durationDays };
+    return { metric, durationDays, title };
 }
 
 function createChallengeDates(durationDays: number) {
@@ -271,7 +280,7 @@ async function handleChallengeStartCommand(ctx: BotContext): Promise<void> {
 
     const parsedInput = parseChallengeStartInput(ctx);
     if (!parsedInput) {
-        await ctx.reply('Использование: /challenge_start <xp|distance|activities> <days>');
+        await ctx.reply('Использование: /challenge_start <xp|distance|activities> <days> <title>');
         return;
     }
 
@@ -284,6 +293,7 @@ async function handleChallengeStartCommand(ctx: BotContext): Promise<void> {
     const { startsAt, endsAt } = createChallengeDates(parsedInput.durationDays);
     const challenge = await createChallenge({
         chatId: getChatId(ctx),
+        title: parsedInput.title,
         metric: parsedInput.metric,
         durationDays: parsedInput.durationDays,
         createdByTelegramId: ctx.from.id,

@@ -68,6 +68,7 @@ const schemaQueries = [
     CREATE TABLE IF NOT EXISTS chat_challenges (
         id SERIAL PRIMARY KEY,
         chat_id TEXT NOT NULL,
+        title TEXT NOT NULL,
         metric TEXT NOT NULL CHECK (metric IN ('xp', 'distance', 'activity_count')),
         duration_days INTEGER NOT NULL CHECK (duration_days > 0),
         starts_at TIMESTAMPTZ NOT NULL,
@@ -75,7 +76,7 @@ const schemaQueries = [
         status TEXT NOT NULL CHECK (status IN ('active', 'finished', 'stopped')),
         created_by_telegram_id BIGINT NOT NULL,
         winner_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        winner_reward_xp INTEGER NOT NULL DEFAULT 100,
+        winner_reward_xp INTEGER NOT NULL DEFAULT 1000,
         finished_at TIMESTAMPTZ
     )
     `,
@@ -83,6 +84,24 @@ const schemaQueries = [
     CREATE UNIQUE INDEX IF NOT EXISTS chat_challenges_one_active_idx
     ON chat_challenges (chat_id)
     WHERE status = 'active'
+    `,
+    `
+    ALTER TABLE chat_challenges
+    ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT 'Чат-челлендж'
+    `,
+    `
+    CREATE TABLE IF NOT EXISTS challenge_winner_badges (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        challenge_id INTEGER NOT NULL REFERENCES chat_challenges(id) ON DELETE CASCADE,
+        challenge_title TEXT NOT NULL,
+        unlocked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (user_id, challenge_id)
+    )
+    `,
+    `
+    CREATE INDEX IF NOT EXISTS challenge_winner_badges_user_idx
+    ON challenge_winner_badges (user_id, unlocked_at DESC)
     `,
     `
     CREATE TABLE IF NOT EXISTS challenge_participants (

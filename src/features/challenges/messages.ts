@@ -25,7 +25,7 @@ export function formatChallengeMetricValue(metric: ChallengeMetric, value: numbe
 }
 
 export function prepareChallengeStartedMessage(challenge: ChatChallenge): string {
-    return `🏁 *Челлендж запущен*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nДлительность: *${challenge.duration_days} дн.*\nФиниш: *${challenge.ends_at.toLocaleString('ru-RU')}*\n\nВступай через /challenge_join`;
+    return `🏁 *${challenge.title}*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nДлительность: *${challenge.duration_days} дн.*\nФиниш: *${challenge.ends_at.toLocaleString('ru-RU')}*\n\nВступай через /challenge_join`;
 }
 
 export function prepareChallengeProgressMessage(
@@ -39,7 +39,7 @@ export function prepareChallengeProgressMessage(
     }
 
     const current = standings[currentIndex];
-    return `\n🏁 *Челлендж*: ${formatChallengeMetricValue(challenge.metric, current.metric_value)} • место *${currentIndex + 1}/${standings.length}*`;
+    return `\n🏁 *${challenge.title}*: ${formatChallengeMetricValue(challenge.metric, current.metric_value)} • место *${currentIndex + 1}/${standings.length}*`;
 }
 
 export function prepareChallengeStatusMessage(
@@ -73,7 +73,7 @@ export function prepareChallengeStatusMessage(
               )}`
             : '';
 
-    return `🏁 *Активный челлендж*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nФиниш: *${challenge.ends_at.toLocaleString(
+    return `🏁 *${challenge.title}*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nФиниш: *${challenge.ends_at.toLocaleString(
         'ru-RU'
     )}*\nУчастники: ${participantsLine}\n\n${leaderboard}${currentUserLine}`;
 }
@@ -84,12 +84,14 @@ export function prepareChallengeFinishedMessage({
     winnerUsername,
     rewardXp,
     newBadgeKeys,
+    newChallengeBadgeTitle,
 }: {
     challenge: ChatChallenge;
     standings: ChallengeStandingRow[];
     winnerUsername: string | null;
     rewardXp: number;
     newBadgeKeys: BadgeKey[];
+    newChallengeBadgeTitle?: string | null;
 }): string {
     const leaderboard = standings.length
         ? standings
@@ -105,7 +107,7 @@ export function prepareChallengeFinishedMessage({
         : 'Никто даже не вспотел.';
 
     if (!winnerUsername) {
-        return `🏁 *Челлендж завершён*\n\nМетрика: *${getChallengeMetricLabel(
+        return `🏁 *${challenge.title} завершён*\n\nМетрика: *${getChallengeMetricLabel(
             challenge.metric
         )}*\nПобедителя нет.\n\n${leaderboard}`;
     }
@@ -113,9 +115,12 @@ export function prepareChallengeFinishedMessage({
     const badgeLine = newBadgeKeys.length
         ? `\nНовые бейджи: ${newBadgeKeys.map((badgeKey) => `*${badgeDefinitionMap[badgeKey].title}*`).join(', ')}`
         : '';
+    const challengeBadgeLine = newChallengeBadgeTitle
+        ? `\nНовый бейдж: *Победитель челленджа: ${newChallengeBadgeTitle}*`
+        : '';
 
-    return `🏁 *Челлендж завершён*\n\nПобедитель: *${winnerUsername.replaceAll(
+    return `🏁 *${challenge.title} завершён*\n\nПобедитель: *${winnerUsername.replaceAll(
         '_',
         ' '
-    )}*\nНаграда: *+${rewardXp} XP*${badgeLine}\n\n${leaderboard}`;
+    )}*\nНаграда: *+${rewardXp} XP*${challengeBadgeLine}${badgeLine}\n\n${leaderboard}`;
 }

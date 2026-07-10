@@ -3,6 +3,7 @@ export type ChallengeMetric = 'xp' | 'distance' | 'activity_count';
 export type ChatChallenge = {
     id: number;
     chat_id: string;
+    title: string;
     metric: ChallengeMetric;
     duration_days: number;
     starts_at: Date;

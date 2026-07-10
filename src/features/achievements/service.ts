@@ -2,7 +2,7 @@ import type { ActivityEvent, User } from '../activities/types';
 import { getActivityType, getActivityLocalHour } from '../activities/helpers';
 import { hasSniperDistance } from '../activities/calculations';
 import { badgeDefinitionMap } from './catalog';
-import type { BadgeKey, UserAchievement } from './types';
+import type { BadgeKey, ChallengeWinnerBadge, UserAchievement } from './types';
 
 type ActivityBadgeContext = {
     userBefore: User;
@@ -114,15 +114,22 @@ export function formatUnlockedBadges(badgeKeys: BadgeKey[]): string {
     return `\n🏅 *Новые бейджи*\n${lines.join('\n')}`;
 }
 
-export function prepareBadgesListMessage(username: string, achievements: UserAchievement[]): string {
-    if (!achievements.length) {
+export function prepareBadgesListMessage(
+    username: string,
+    achievements: UserAchievement[],
+    challengeWinnerBadges: ChallengeWinnerBadge[] = []
+): string {
+    if (!achievements.length && !challengeWinnerBadges.length) {
         return `🏅 *${username.replaceAll('_', ' ')}*, у тебя пока нет бейджей. Пора исправлять.`;
     }
 
-    const items = achievements.map((achievement, index) => {
+    const regularItems = achievements.map((achievement, index) => {
         const badge = badgeDefinitionMap[achievement.badge_key];
         return `${index + 1}. *${badge.title}* — ${badge.description}`;
     });
+    const challengeItems = challengeWinnerBadges.map(
+        (badge, index) => `${regularItems.length + index + 1}. 🏆 *Победитель челленджа: ${badge.challenge_title}*`
+    );
 
-    return `🏅 *Бейджи ${username.replaceAll('_', ' ')}*\n\n${items.join('\n')}`;
+    return `🏅 *Бейджи ${username.replaceAll('_', ' ')}*\n\n${[...regularItems, ...challengeItems].join('\n')}`;
 }

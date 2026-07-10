@@ -1,9 +1,20 @@
-import { completeChallenge, countUserChallengeVictories, findLevelInDb, getChallengeStandings, getUserById, insertUserAchievements, updateUserXpAndLevel } from '../../infrastructure/database/service';
+import {
+    completeChallenge,
+    countUserChallengeVictories,
+    createChallengeWinnerBadge,
+    findLevelInDb,
+    getChallengeStandings,
+    getUserById,
+    insertUserAchievements,
+    updateUserXpAndLevel,
+} from '../../infrastructure/database/service';
 import type { Queryable } from '../../infrastructure/database/types';
 import { getChallengeBadgeCandidates } from '../achievements/service';
 import type { BadgeKey } from '../achievements/types';
 import { prepareChallengeFinishedMessage } from './messages';
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from './types';
+
+const CHALLENGE_WINNER_REWARD_XP = 1000;
 
 export function parseChallengeMetric(rawMetric: string): ChallengeMetric | null {
     if (rawMetric === 'xp') return 'xp';
@@ -29,11 +40,12 @@ export async function finalizeChallenge({
     standings: ChallengeStandingRow[];
     announcement: string | null;
     winnerBadgeKeys: BadgeKey[];
+    winnerChallengeBadgeTitle: string | null;
 }> {
     const standings = await getChallengeStandings(challenge, db);
     const topStanding = standings[0];
     const hasWinner = Boolean(topStanding && topStanding.metric_value > 0);
-    const rewardXp = hasWinner ? 100 : 0;
+    const rewardXp = hasWinner ? CHALLENGE_WINNER_REWARD_XP : 0;
     const finalizedChallenge = await completeChallenge(
         {
             challengeId: challenge.id,
@@ -51,6 +63,7 @@ export async function finalizeChallenge({
             standings,
             announcement: null,
             winnerBadgeKeys: [],
+            winnerChallengeBadgeTitle: null,
         };
     }
 
@@ -66,6 +79,7 @@ export async function finalizeChallenge({
                 newBadgeKeys: [],
             }),
             winnerBadgeKeys: [],
+            winnerChallengeBadgeTitle: null,
         };
     }
 
@@ -76,6 +90,7 @@ export async function finalizeChallenge({
             standings,
             announcement: null,
             winnerBadgeKeys: [],
+            winnerChallengeBadgeTitle: null,
         };
     }
 
@@ -86,6 +101,7 @@ export async function finalizeChallenge({
     const victoriesCount = await countUserChallengeVictories(winner.id, db);
     const challengeBadgeCandidates = getChallengeBadgeCandidates(victoriesCount);
     const insertedBadgeKeys = await insertUserAchievements(winner.id, challengeBadgeCandidates, db);
+    const winnerChallengeBadge = await createChallengeWinnerBadge(winner.id, finalizedChallenge.id, finalizedChallenge.title, db);
 
     return {
         finalizedChallenge,
@@ -96,7 +112,9 @@ export async function finalizeChallenge({
             winnerUsername: winner.username,
             rewardXp,
             newBadgeKeys: insertedBadgeKeys,
+            newChallengeBadgeTitle: winnerChallengeBadge?.challenge_title ?? null,
         }),
         winnerBadgeKeys: insertedBadgeKeys,
+        winnerChallengeBadgeTitle: winnerChallengeBadge?.challenge_title ?? null,
     };
 }
