@@ -1,66 +1,73 @@
 import express from 'express';
 import { Telegraf } from 'telegraf';
 import { pool } from '../infrastructure/database/config';
-import { handleStravaAuth } from '../features/auth/service';
-import { log, errorLog } from '../shared/logger';
+import { consumeAuthSession } from '../infrastructure/database/service';
 import { createWebhookSubscription } from '../infrastructure/strava/service';
+import { handleStravaAuth } from '../features/auth/service';
+import { errorLog, log } from '../shared/logger';
 import { webhookHandler } from './handlers/webhook';
 
-export function setupRoutes(app: express.Application, bot: Telegraf) {
-    app.use((req, res, next) => {
-        if (req.url !== '/healthz') {
-            log('HTTP', `${req.method} ${req.url} - IP: ${req.ip}`);
-        }
-        res.setHeader('Content-Type', 'application/json');
-        next();
-    });
+type RouteHandler = (req: express.Request, res: express.Response) => Promise<void>;
 
-    app.get('/healthz', (_, res) => res.status(200).send({ status: 'running' }));
-
-    app.get('/ping', (_, res) => {
-        res.status(200).send({ status: 'ok' });
-    });
-
-    app.get('/auth', async (req, res) => {
+function withRouteErrorHandling(tag: string, handler: RouteHandler): RouteHandler {
+    return async (req, res) => {
         try {
-            const { code, state } = req.query as Record<string, string>;
-            const chatId = state;
-            log('AUTH', `Received auth callback code for chat ${chatId}`);
-
-            const athlete = await handleStravaAuth(code, chatId);
-
-            bot.telegram.sendMessage(
-                chatId,
-                `🎉 ${athlete.firstname} ${athlete.lastname} профессионально подключил Страву!`
-            );
-
-            res.send('Всё сработало, можно закрывать это окно.');
+            await handler(req, res);
         } catch (error) {
-            errorLog('AUTH', 'Error in /auth handler', error);
+            errorLog(tag, `Error in ${req.path} handler`, error);
             res.status(500).send('Server error');
         }
-    });
-
-    app.get('/setup-webhooks', async (_, res) => {
-        try {
-            await createWebhookSubscription(`${process.env.APP_URL}/webhook`);
-            res.status(200).send({ status: 'ok' });
-        } catch (e) {
-            res.status(400).send(e);
-        }
-    });
-
-    app.get('/users', async (_, res) => {
-        try {
-            const allUsers = await pool.query(`SELECT * FROM USERS`);
-            log('DEBUG', `Found ${allUsers.rowCount} users`);
-            res.status(200).send({ status: 'ok' });
-        } catch (e) {
-            errorLog('DEBUG', 'Error fetching users', e);
-            return res.status(400).send();
-        }
-    });
-
-    app.post('/webhook', express.json(), webhookHandler);
+    };
 }
 
+function setDefaultResponseHeaders(req: express.Request, res: express.Response, next: express.NextFunction) {
+    if (req.url !== '/healthz') {
+        log('HTTP', `${req.method} ${req.url} - IP: ${req.ip}`);
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    next();
+}
+
+async function handleAuthCallback(bot: Telegraf, req: express.Request, res: express.Response): Promise<void> {
+    const { code, state } = req.query as Record<string, string>;
+    if (!code || !state) {
+        res.status(400).send('Missing code or state');
+        return;
+    }
+
+    const authSession = await consumeAuthSession(state);
+    if (!authSession) {
+        res.status(400).send('Auth link is invalid, expired, or already used. Please request /auth again.');
+        return;
+    }
+
+    const { chat_id: chatId, telegram_id: telegramId } = authSession;
+    log('AUTH', `Received auth callback code for chat ${chatId}`);
+
+    const athlete = await handleStravaAuth(code, chatId, telegramId);
+    await bot.telegram.sendMessage(chatId, `🎉 ${athlete.firstname} ${athlete.lastname} профессионально подключил Страву!`);
+    res.send('Всё сработало, можно закрывать это окно.');
+}
+
+async function handleSetupWebhooks(_: express.Request, res: express.Response): Promise<void> {
+    await createWebhookSubscription(`${process.env.APP_URL}/webhook`);
+    res.status(200).send({ status: 'ok' });
+}
+
+async function handleUsersDebug(_: express.Request, res: express.Response): Promise<void> {
+    const allUsers = await pool.query('SELECT * FROM users');
+    log('DEBUG', `Found ${allUsers.rowCount} users`);
+    res.status(200).send({ status: 'ok' });
+}
+
+export function setupRoutes(app: express.Application, bot: Telegraf) {
+    app.use(setDefaultResponseHeaders);
+
+    app.get('/healthz', (_, res) => res.status(200).send({ status: 'running' }));
+    app.get('/ping', (_, res) => res.status(200).send({ status: 'ok' }));
+    app.get('/auth', withRouteErrorHandling('AUTH', (req, res) => handleAuthCallback(bot, req, res)));
+    app.get('/setup-webhooks', withRouteErrorHandling('WEBHOOK_SETUP', handleSetupWebhooks));
+    app.get('/users', withRouteErrorHandling('DEBUG', handleUsersDebug));
+    app.post('/webhook', express.json(), webhookHandler);
+}

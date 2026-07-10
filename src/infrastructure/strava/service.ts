@@ -1,8 +1,8 @@
 import strava, { DetailedActivityResponse } from 'strava-v3';
 import { errorLog, log } from '../../shared/logger';
 
-export function getStravaAuthUrl(chatId: any): string {
-    return `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_ID}&response_type=code&redirect_uri=${process.env.APP_URL}/auth/&approval_prompt=force&scope=read,activity:read&state=${chatId}`;
+export function getStravaAuthUrl(stateToken: string): string {
+    return `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_ID}&response_type=code&redirect_uri=${process.env.APP_URL}/auth/&approval_prompt=force&scope=read,activity:read&state=${stateToken}`;
 }
 
 export function getFullActivityInfo({ activityId, userAccessToken }: { activityId: number; userAccessToken: string }): Promise<DetailedActivityResponse & { type: string }> {
@@ -26,4 +26,3 @@ export async function createWebhookSubscription(callbackUrl: string): Promise<an
         verify_token: 'WEBHOOK_VERIFY',
     });
 }
-

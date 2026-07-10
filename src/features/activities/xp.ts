@@ -23,7 +23,7 @@ export async function calculateLevelInfo({
     const newXp = user.xp + earnedXp;
     const newLevelInfo = await findLevelInDb(newXp);
 
-    return { earnedXp: earnedXp, newLevel: newLevelInfo.level, nextLevelRequiredXp: newLevelInfo.total_required_xp };
+    return { earnedXp, newLevel: newLevelInfo.level, nextLevelRequiredXp: newLevelInfo.total_required_xp };
 }
 
 export function prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp, xpMultiplier }: { user: User; earnedXp: number; newLevel: number; nextLevelRequiredXp: number; xpMultiplier: number }): string {
@@ -32,19 +32,17 @@ export function prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequir
     }
 
     const newXp = user.xp + earnedXp;
-    let multiMessage = '';
-    if (xpMultiplier > 1) multiMessage = ` (*${xpMultiplier.toFixed(2)}x*)`;
     const levelUpMessage =
         newLevel > user.level ? `🎉 ${user.username.replaceAll('_', ' ')} теперь *${rankSystem[newLevel]}* 🚀\n` : '';
+    const multiMessage = xpMultiplier > 1 ? ` (*${xpMultiplier.toFixed(2)}x*)` : '';
 
-    let message = '';
-    if (levelUpMessage) message += levelUpMessage + '\n';
-    message += `
+    return [
+        levelUpMessage ? `${levelUpMessage}\n` : '',
+        `
 🔥 +*${earnedXp}* XP${multiMessage}
 🏆 Прогресс: ${newXp}/${nextLevelRequiredXp} XP
-  `;
-
-    return message;
+  `,
+    ].join('');
 }
 
 export function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp }: { user: User; xpToAdd: number; newLevel: number; nextLevelRequiredXp: number }): string {
@@ -62,4 +60,3 @@ export function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequired
 }
 
 export { getBeautifulStatus };
-

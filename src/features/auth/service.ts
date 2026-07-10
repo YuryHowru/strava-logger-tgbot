@@ -31,21 +31,26 @@ export async function refreshUserToken(user: User): Promise<void> {
     log('AUTH', `Refreshed token for user ${user.username} (${user.athleteid})`);
 }
 
-export async function handleStravaAuth(code: string, chatId: string): Promise<{ firstname: string; lastname: string }> {
+export async function handleStravaAuth(
+    code: string,
+    chatId: string,
+    telegramId?: number
+): Promise<{ firstname: string; lastname: string }> {
     const tokenResponse = await strava.oauth.getToken(code);
     const { access_token, refresh_token, expires_at, athlete } = tokenResponse;
 
     log('AUTH', `Got tokens for athlete: ${athlete.id} (${athlete.firstname} ${athlete.lastname})`);
 
     const queryText = `
-      INSERT INTO users (athleteId, accessToken, refreshToken, expiresAt, chatId, username)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO users (athleteId, accessToken, refreshToken, expiresAt, chatId, username, telegram_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (athleteId) DO UPDATE SET
         accessToken = EXCLUDED.accessToken,
         refreshToken = EXCLUDED.refreshToken,
         expiresAt = EXCLUDED.expiresAt,
         chatId = EXCLUDED.chatId,
-        username = EXCLUDED.username
+        username = EXCLUDED.username,
+        telegram_id = COALESCE(EXCLUDED.telegram_id, users.telegram_id)
     `;
 
     const values = [
@@ -55,6 +60,7 @@ export async function handleStravaAuth(code: string, chatId: string): Promise<{ 
         expires_at,
         chatId,
         athlete.username ?? `${athlete.firstname} ${athlete.lastname}`,
+        telegramId ?? null,
     ];
 
     await pool.query(queryText, values);

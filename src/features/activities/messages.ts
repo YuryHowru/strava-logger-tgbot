@@ -1,12 +1,14 @@
 import { User } from './types';
 import { verbsByActivity, emojiByActivity, rankSystem } from './constants';
 import { formatTime, calculatePace } from './formatters';
+import { getActivityType } from './helpers';
 
 export function prepareActivityMessage({ activity, user, newLevel }: { activity: any; user: User; newLevel: number }): string {
-    const activityType = activity.type;
+    const activityType = getActivityType(activity);
     const activityName = activity.name;
-    const movingTime = formatTime(activity.moving_time);
+    const movingTime = formatTime(activity.moving_time ?? 0);
     const verbs = verbsByActivity[activityType] ?? verbsByActivity.default;
+    const activityEmoji = emojiByActivity[activityType] ?? emojiByActivity.default;
     const randomNumber = Math.floor(Math.random() * verbs.length);
     const randomVerb = verbs[randomNumber];
 
@@ -16,7 +18,7 @@ export function prepareActivityMessage({ activity, user, newLevel }: { activity:
         const elevationGain = activity.total_elevation_gain ? activity.total_elevation_gain.toFixed(2) : '0';
         const pace = calculatePace(activity.moving_time, activity.distance);
         return `
-        ${emojiByActivity[activityType]} ${rankSystem[newLevel]} *${user.username.replaceAll('_', ' ')}* ${randomVerb}
+        ${activityEmoji} ${rankSystem[newLevel]} *${user.username.replaceAll('_', ' ')}* ${randomVerb}
 
         *${activityName}*
         *Дистанция*: ${distanceKm} км
@@ -27,12 +29,10 @@ export function prepareActivityMessage({ activity, user, newLevel }: { activity:
     }
 
     return `
-      ${emojiByActivity[activityType]} ${rankSystem[newLevel]} *${user.username.replaceAll('_', ' ')}* ${randomVerb}
+      ${activityEmoji} ${rankSystem[newLevel]} *${user.username.replaceAll('_', ' ')}* ${randomVerb}
 
       *${activityName}*
       *Продолжительность*: ${movingTime}
-      *Потраченные калории*: ${activity.calories.toFixed(2)} ккал
+      *Потраченные калории*: ${(activity.calories ?? 0).toFixed(2)} ккал
     `;
 }
-
-
