@@ -8,6 +8,10 @@ const metricLabels: Record<ChallengeMetric, string> = {
     activity_count: 'тренировки',
 };
 
+function escapeMarkdown(text: string): string {
+    return text.replace(/([_*[\]`])/g, '\\$1');
+}
+
 export function getChallengeMetricLabel(metric: ChallengeMetric): string {
     return metricLabels[metric];
 }
@@ -25,7 +29,7 @@ export function formatChallengeMetricValue(metric: ChallengeMetric, value: numbe
 }
 
 export function prepareChallengeStartedMessage(challenge: ChatChallenge): string {
-    return `🏁 *${challenge.title}*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nДлительность: *${challenge.duration_days} дн.*\nФиниш: *${challenge.ends_at.toLocaleString('ru-RU')}*\n\nВступай через /challenge_join`;
+    return `🏁 *${escapeMarkdown(challenge.title)}*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nДлительность: *${challenge.duration_days} дн.*\nФиниш: *${challenge.ends_at.toLocaleString('ru-RU')}*\n\nВступай через \`/challenge_join\``;
 }
 
 export function prepareChallengeProgressMessage(
@@ -39,7 +43,7 @@ export function prepareChallengeProgressMessage(
     }
 
     const current = standings[currentIndex];
-    return `\n🏁 *${challenge.title}*: ${formatChallengeMetricValue(challenge.metric, current.metric_value)} • место *${currentIndex + 1}/${standings.length}*`;
+    return `\n🏁 *${escapeMarkdown(challenge.title)}*: ${formatChallengeMetricValue(challenge.metric, current.metric_value)} • место *${currentIndex + 1}/${standings.length}*`;
 }
 
 export function prepareChallengeStatusMessage(
@@ -56,7 +60,7 @@ export function prepareChallengeStatusMessage(
               .slice(0, 10)
               .map(
                   (standing, index) =>
-                      `${index + 1}. *${standing.username.replaceAll('_', ' ')}* — ${formatChallengeMetricValue(
+                      `${index + 1}. *${escapeMarkdown(standing.username.replaceAll('_', ' '))}* — ${formatChallengeMetricValue(
                           challenge.metric,
                           standing.metric_value
                       )}`
@@ -73,9 +77,9 @@ export function prepareChallengeStatusMessage(
               )}`
             : '';
 
-    return `🏁 *${challenge.title}*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nФиниш: *${challenge.ends_at.toLocaleString(
+    return `🏁 *${escapeMarkdown(challenge.title)}*\n\nМетрика: *${getChallengeMetricLabel(challenge.metric)}*\nФиниш: *${challenge.ends_at.toLocaleString(
         'ru-RU'
-    )}*\nУчастники: ${participantsLine}\n\n${leaderboard}${currentUserLine}`;
+    )}*\nУчастники: ${escapeMarkdown(participantsLine)}\n\n${leaderboard}${currentUserLine}`;
 }
 
 export function prepareChallengeFinishedMessage({
@@ -98,7 +102,7 @@ export function prepareChallengeFinishedMessage({
               .slice(0, 10)
               .map(
                   (standing, index) =>
-                      `${index + 1}. *${standing.username.replaceAll('_', ' ')}* — ${formatChallengeMetricValue(
+                      `${index + 1}. *${escapeMarkdown(standing.username.replaceAll('_', ' '))}* — ${formatChallengeMetricValue(
                           challenge.metric,
                           standing.metric_value
                       )}`
@@ -107,7 +111,7 @@ export function prepareChallengeFinishedMessage({
         : 'Никто даже не вспотел.';
 
     if (!winnerUsername) {
-        return `🏁 *${challenge.title} завершён*\n\nМетрика: *${getChallengeMetricLabel(
+        return `🏁 *${escapeMarkdown(challenge.title)} завершён*\n\nМетрика: *${getChallengeMetricLabel(
             challenge.metric
         )}*\nПобедителя нет.\n\n${leaderboard}`;
     }
@@ -116,11 +120,11 @@ export function prepareChallengeFinishedMessage({
         ? `\nНовые медали: ${newBadgeKeys.map((badgeKey) => `*${badgeDefinitionMap[badgeKey].title}*`).join(', ')}`
         : '';
     const challengeBadgeLine = newChallengeBadgeTitle
-        ? `\nНовая медаль: *Победитель челленджа: ${newChallengeBadgeTitle}*`
+        ? `\nНовая медаль: *Победитель челленджа: ${escapeMarkdown(newChallengeBadgeTitle)}*`
         : '';
 
-    return `🏁 *${challenge.title} завершён*\n\nПобедитель: *${winnerUsername.replaceAll(
+    return `🏁 *${escapeMarkdown(challenge.title)} завершён*\n\nПобедитель: *${escapeMarkdown(winnerUsername.replaceAll(
         '_',
         ' '
-    )}*\nНаграда: *+${rewardXp} XP*${challengeBadgeLine}${badgeLine}\n\n${leaderboard}`;
+    ))}*\nНаграда: *+${rewardXp} XP*${challengeBadgeLine}${badgeLine}\n\n${leaderboard}`;
 }
