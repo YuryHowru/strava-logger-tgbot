@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { setupRoutes } from './routes/routes';
-import { createBot, launchBot } from './infrastructure/bot/config';
+import { createBot, launchBot, stopBot } from './infrastructure/bot/config';
 import { initializeDatabase } from './infrastructure/database/bootstrap';
 import { log } from './shared/logger';
 
@@ -24,6 +24,9 @@ async function bootstrap() {
     });
 
     await launchBot(bot);
+
+    process.once('SIGINT', () => stopBot(bot, 'SIGINT'));
+    process.once('SIGTERM', () => stopBot(bot, 'SIGTERM'));
 }
 
 bootstrap().catch((error) => {
