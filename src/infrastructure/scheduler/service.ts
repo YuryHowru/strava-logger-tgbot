@@ -4,6 +4,7 @@ import { getCurrentWeekPeriod, getPreviousWeekPeriod, isMonthlyReportDue, isWeek
 import { buildWeeklySummary } from '../../features/weekly/service';
 import { prepareWeeklySummaryMessage } from '../../features/weekly/messages';
 import { createWeeklyQuestsForActiveChats } from '../../features/quests/service';
+import { createWeeklyBossBattles } from '../../features/boss/service';
 import { errorLog, log } from '../../shared/logger';
 
 const SCHEDULER_INTERVAL_MS = 14 * 60 * 1000;
@@ -41,7 +42,8 @@ async function sendWeeklyReports(bot: Telegraf, now: Date): Promise<void> {
 
 export async function runScheduledJobs(bot: Telegraf, now = new Date()): Promise<void> {
     if (isWeeklyReportDue(now)) {
-        await createWeeklyQuestsForActiveChats(getCurrentWeekPeriod(now));
+        const currentWeek = getCurrentWeekPeriod(now);
+        await Promise.all([createWeeklyQuestsForActiveChats(currentWeek), createWeeklyBossBattles(currentWeek)]);
         await sendWeeklyReports(bot, now);
     }
 

@@ -3,6 +3,7 @@ import type { Queryable } from './types';
 import type { ActivityEvent, LevelInfo, User } from '../../features/activities/types';
 import type { UserAchievement, BadgeKey, ChallengeWinnerBadge } from '../../features/achievements/types';
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from '../../features/challenges/types';
+import type { BossBattle, BossContributor } from '../../features/boss/types';
 import type { ComebackCampaign } from '../../features/comeback/types';
 import type { QuestType, UserQuest } from '../../features/quests/types';
 import type { WeeklySummaryRow } from '../../features/weekly/types';
@@ -662,6 +663,166 @@ export async function completeUserQuest(
     );
 
     return result.rows[0] || null;
+}
+
+export async function getAverageWeeklyChatXp(
+    chatId: string,
+    startDate: string,
+    endDate: string,
+    db: Queryable = pool
+): Promise<number> {
+    const result = await db.query<{ average_xp: string }>(
+        `
+        SELECT COALESCE(SUM(earned_xp), 0) / 4.0 AS average_xp
+        FROM activity_events
+        WHERE chat_id = $1
+          AND local_activity_date >= $2::date
+          AND local_activity_date < $3::date
+        `,
+        [chatId, startDate, endDate]
+    );
+
+    return Number(result.rows[0]?.average_xp ?? 0);
+}
+
+export async function getBossBattle(
+    chatId: string,
+    periodKey: string,
+    db: Queryable = pool
+): Promise<BossBattle | null> {
+    const result = await db.query<BossBattle>(
+        `
+        SELECT *
+        FROM chat_boss_battles
+        WHERE chat_id = $1
+          AND period_key = $2
+        LIMIT 1
+        `,
+        [chatId, periodKey]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function createBossBattle(
+    {
+        chatId,
+        periodKey,
+        bossName,
+        hp,
+        startsOn,
+        endsOn,
+    }: {
+        chatId: string;
+        periodKey: string;
+        bossName: string;
+        hp: number;
+        startsOn: string;
+        endsOn: string;
+    },
+    db: Queryable = pool
+): Promise<BossBattle | null> {
+    const result = await db.query<BossBattle>(
+        `
+        INSERT INTO chat_boss_battles (chat_id, period_key, boss_name, hp, status, starts_on, ends_on)
+        VALUES ($1, $2, $3, $4, 'active', $5, $6)
+        ON CONFLICT (chat_id, period_key) DO NOTHING
+        RETURNING *
+        `,
+        [chatId, periodKey, bossName, hp, startsOn, endsOn]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function updateBossBattleDamage(
+    battleId: number,
+    damage: number,
+    db: Queryable = pool
+): Promise<BossBattle> {
+    const result = await db.query<BossBattle>(
+        `
+        UPDATE chat_boss_battles
+        SET current_damage = LEAST(hp, current_damage + $2)
+        WHERE id = $1
+          AND status = 'active'
+        RETURNING *
+        `,
+        [battleId, damage]
+    );
+
+    if (!result.rows[0]) {
+        throw new Error(`Boss battle ${battleId} is not active`);
+    }
+
+    return result.rows[0];
+}
+
+export async function markBossBattleDefeated(
+    battleId: number,
+    defeatedAt: Date,
+    db: Queryable = pool
+): Promise<BossBattle | null> {
+    const result = await db.query<BossBattle>(
+        `
+        UPDATE chat_boss_battles
+        SET status = 'defeated',
+            defeated_at = $2
+        WHERE id = $1
+          AND status = 'active'
+          AND current_damage >= hp
+        RETURNING *
+        `,
+        [battleId, defeatedAt]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function getBossContributors(
+    chatId: string,
+    startDate: string,
+    endDate: string,
+    db: Queryable = pool
+): Promise<BossContributor[]> {
+    const result = await db.query<BossContributor>(
+        `
+        SELECT
+            u.id AS user_id,
+            u.username,
+            COALESCE(SUM(a.earned_xp), 0)::int AS damage
+        FROM activity_events a
+        JOIN users u ON u.id = a.user_id
+        WHERE a.chat_id = $1
+          AND a.local_activity_date >= $2::date
+          AND a.local_activity_date < $3::date
+        GROUP BY u.id, u.username
+        ORDER BY damage DESC, u.username ASC
+        `,
+        [chatId, startDate, endDate]
+    );
+
+    return result.rows.map((row) => ({ ...row, damage: Number(row.damage) }));
+}
+
+export async function getBossParticipants(
+    chatId: string,
+    startDate: string,
+    endDate: string,
+    db: Queryable = pool
+): Promise<Array<{ user_id: number }>> {
+    const result = await db.query<{ user_id: number }>(
+        `
+        SELECT DISTINCT user_id
+        FROM activity_events
+        WHERE chat_id = $1
+          AND local_activity_date >= $2::date
+          AND local_activity_date < $3::date
+        `,
+        [chatId, startDate, endDate]
+    );
+
+    return result.rows;
 }
 
 export async function createChallenge(

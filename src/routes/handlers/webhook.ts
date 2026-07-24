@@ -24,6 +24,7 @@ import { prepareChallengeProgressMessage } from '../../features/challenges/messa
 import { finalizeChallenge, isChallengeExpired } from '../../features/challenges/service';
 import { processComebackCampaign } from '../../features/comeback/service';
 import { processUserQuests } from '../../features/quests/service';
+import { processBossBattle } from '../../features/boss/service';
 import { errorLog, log } from '../../shared/logger';
 import { PoolClient } from 'pg';
 
@@ -53,6 +54,8 @@ type ActivityProcessingResult = {
     challengeAnnouncement: string | null;
     comebackMessage: string | null;
     questMessages: string[];
+    bossProgressMessage: string | null;
+    bossDefeatMessage: string | null;
 };
 
 function isCreateActivityEvent(body: WebhookRequest['body']): body is {
@@ -280,6 +283,10 @@ async function processActivityUpdate({
             activityEvent,
             db: client,
         });
+        const bossResult = await processBossBattle({
+            activityEvent,
+            db: client,
+        });
 
         return {
             earnedXp: progress.earnedXp,
@@ -293,6 +300,8 @@ async function processActivityUpdate({
             challengeAnnouncement: challengeUpdate.challengeAnnouncement,
             comebackMessage: comebackResult.message,
             questMessages: questResult.completedMessages,
+            bossProgressMessage: bossResult.progressMessage,
+            bossDefeatMessage: bossResult.defeatMessage,
         };
     });
 }
@@ -321,6 +330,8 @@ function buildWebhookMessage({
         }),
         ...processingResult.questMessages,
         processingResult.comebackMessage,
+        processingResult.bossProgressMessage,
+        processingResult.bossDefeatMessage,
         processingResult.challengeProgressMessage || null,
         `[Открыть в Страве](https://www.strava.com/activities/${activityId})`,
     ];

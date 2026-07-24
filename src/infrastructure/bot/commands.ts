@@ -24,6 +24,8 @@ import { prepareChallengeStartedMessage, prepareChallengeStatusMessage } from '.
 import { finalizeChallenge, isChallengeExpired, parseChallengeMetric } from '../../features/challenges/service';
 import { prepareQuestsMessage } from '../../features/quests/messages';
 import { getUserWeeklyQuestProgress } from '../../features/quests/service';
+import { prepareBossStatusMessage } from '../../features/boss/messages';
+import { getCurrentBossStatus } from '../../features/boss/service';
 import { getStravaAuthUrl } from '../strava/service';
 import { errorLog, log } from '../../shared/logger';
 
@@ -223,6 +225,7 @@ function getHelpMessage(): string {
         '🔹 `/top` — посмотреть топ-10 пользователей по уровню.',
         '🔹 `/badges` — посмотреть свои медали.',
         '🔹 `/quests` — посмотреть личные квесты недели.',
+        '🔹 `/boss` — посмотреть босса недели.',
         '🔹 `/challenge` — посмотреть активный челлендж.',
         '🔹 `/challenge_join` — вступить в активный челлендж.',
         '🔹 `/challenge_start <xp|distance|activities> <days> <title>` — старт челленджа.',
@@ -257,6 +260,12 @@ async function handleQuestsCommand(ctx: BotContext): Promise<void> {
 
     const questProgress = await getUserWeeklyQuestProgress(user);
     await ctx.reply(prepareQuestsMessage(user.username, questProgress), { parse_mode: 'Markdown' });
+}
+
+async function handleBossCommand(ctx: BotContext): Promise<void> {
+    log('BOT', `Command /boss from ${ctx.from.id} in chat ${ctx.chat.id}`);
+    const { battle, contributors } = await getCurrentBossStatus(getChatId(ctx));
+    await ctx.reply(prepareBossStatusMessage(battle, contributors), { parse_mode: 'Markdown' });
 }
 
 function parseChallengeStartInput(ctx: BotContext) {
@@ -459,6 +468,7 @@ export function setupBotCommands(bot: Telegraf) {
     bot.command('me', createCommandHandler('Error processing /me', '❌ Произошла ошибка при получении информации. Попробуйте позже.', handleMeCommand));
     bot.command('badges', createCommandHandler('Error processing /badges', '❌ Не смог показать медали. Попробуй позже.', handleBadgesCommand));
     bot.command('quests', createCommandHandler('Error processing /quests', '❌ Не смог показать квесты. Попробуй позже.', handleQuestsCommand));
+    bot.command('boss', createCommandHandler('Error processing /boss', '❌ Не смог показать босса. Попробуй позже.', handleBossCommand));
     bot.command('help', handleHelpCommand);
     bot.command('top', createCommandHandler('Error fetching leaderboard', '❌ Ошибка при получении лидерборда. Попробуйте позже.', handleTopCommand));
     bot.command(
