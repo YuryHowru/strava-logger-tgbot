@@ -14,7 +14,10 @@ export type BadgeKey =
     | 'sunrise_hunter'
     | 'night_shift'
     | 'challenge_champion'
-    | 'triple_crown';
+    | 'triple_crown'
+    | 'comeback_7'
+    | 'comeback_14'
+    | 'comeback_30';
 
 export type BadgeDefinition = {
     key: BadgeKey;

@@ -22,6 +22,7 @@ import { calculateLevelInfo, prepareGamifyMessage } from '../../features/activit
 import { refreshUserToken } from '../../features/auth/service';
 import { prepareChallengeProgressMessage } from '../../features/challenges/messages';
 import { finalizeChallenge, isChallengeExpired } from '../../features/challenges/service';
+import { processComebackCampaign } from '../../features/comeback/service';
 import { errorLog, log } from '../../shared/logger';
 import { PoolClient } from 'pg';
 
@@ -49,6 +50,7 @@ type ActivityProcessingResult = {
     unlockedBadgeKeys: BadgeKey[];
     challengeProgressMessage: string;
     challengeAnnouncement: string | null;
+    comebackMessage: string | null;
 };
 
 function isCreateActivityEvent(body: WebhookRequest['body']): body is {
@@ -252,7 +254,7 @@ async function processActivityUpdate({
             client
         );
 
-        const [unlockedBadgeKeys, challengeUpdate] = await Promise.all([
+        const [activityBadgeKeys, challengeUpdate, comebackResult] = await Promise.all([
             getUnlockedBadges({
                 client,
                 user,
@@ -265,6 +267,11 @@ async function processActivityUpdate({
                 chatId: String(user.chatid),
                 userId: user.id,
             }),
+            processComebackCampaign({
+                user,
+                activityEvent,
+                db: client,
+            }),
         ]);
 
         return {
@@ -274,9 +281,10 @@ async function processActivityUpdate({
             streakMessage: progress.streakMessage,
             xpMultiplier: progress.xpMultiplier,
             beautifulBonusMessage: progress.beautifulBonusMessage,
-            unlockedBadgeKeys,
+            unlockedBadgeKeys: [...activityBadgeKeys, ...comebackResult.unlockedBadgeKeys],
             challengeProgressMessage: challengeUpdate.challengeProgressMessage,
             challengeAnnouncement: challengeUpdate.challengeAnnouncement,
+            comebackMessage: comebackResult.message,
         };
     });
 }
@@ -303,6 +311,7 @@ function buildWebhookMessage({
             nextLevelRequiredXp: processingResult.nextLevelRequiredXp,
             xpMultiplier: processingResult.xpMultiplier,
         }),
+        processingResult.comebackMessage,
         processingResult.challengeProgressMessage || null,
         `[Открыть в Страве](https://www.strava.com/activities/${activityId})`,
     ];

@@ -17,6 +17,9 @@ export const badgeDefinitions: BadgeDefinition[] = [
     { key: 'night_shift', title: 'Ночная Смена', description: 'Тренировка началась после 22:00.' },
     { key: 'challenge_champion', title: 'Чемпион Челленджа', description: 'Первая победа в чат-челлендже.' },
     { key: 'triple_crown', title: 'Тройная Корона', description: 'Три победы в чат-челленджах.' },
+    { key: 'comeback_7', title: 'Камбэк', description: 'Вернулся после 7+ дней паузы.' },
+    { key: 'comeback_14', title: 'Большой Камбэк', description: 'Вернулся после 14+ дней паузы.' },
+    { key: 'comeback_30', title: 'Из Спячки', description: 'Вернулся после 30+ дней паузы.' },
 ];
 
 export const badgeDefinitionMap: Record<BadgeKey, BadgeDefinition> = badgeDefinitions.reduce(

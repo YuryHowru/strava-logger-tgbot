@@ -3,6 +3,7 @@ import type { Queryable } from './types';
 import type { ActivityEvent, LevelInfo, User } from '../../features/activities/types';
 import type { UserAchievement, BadgeKey, ChallengeWinnerBadge } from '../../features/achievements/types';
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from '../../features/challenges/types';
+import type { ComebackCampaign } from '../../features/comeback/types';
 import type { WeeklySummaryRow } from '../../features/weekly/types';
 import { log } from '../../shared/logger';
 
@@ -421,6 +422,120 @@ export async function getWeeklySummaryRows(
         total_distance_m: Number(row.total_distance_m),
         active_days: Number(row.active_days),
     }));
+}
+
+export async function getActiveComebackCampaign(
+    userId: number,
+    db: Queryable = pool
+): Promise<ComebackCampaign | null> {
+    const result = await db.query<ComebackCampaign>(
+        `
+        SELECT *
+        FROM comeback_campaigns
+        WHERE user_id = $1
+          AND status = 'active'
+        ORDER BY started_at DESC
+        LIMIT 1
+        `,
+        [userId]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function expireUserComebackCampaigns(
+    userId: number,
+    now: Date,
+    db: Queryable = pool
+): Promise<void> {
+    await db.query(
+        `
+        UPDATE comeback_campaigns
+        SET status = 'expired'
+        WHERE user_id = $1
+          AND status = 'active'
+          AND expires_at < $2
+        `,
+        [userId, now]
+    );
+}
+
+export async function hasRecentComebackCampaign(
+    userId: number,
+    since: Date,
+    db: Queryable = pool
+): Promise<boolean> {
+    const result = await db.query<{ exists: boolean }>(
+        `
+        SELECT EXISTS (
+            SELECT 1
+            FROM comeback_campaigns
+            WHERE user_id = $1
+              AND started_at >= $2
+        ) AS exists
+        `,
+        [userId, since]
+    );
+
+    return Boolean(result.rows[0]?.exists);
+}
+
+export async function createComebackCampaign(
+    {
+        userId,
+        triggerActivityEventId,
+        inactivityDays,
+        rewardXp,
+        expiresAt,
+    }: {
+        userId: number;
+        triggerActivityEventId: number;
+        inactivityDays: number;
+        rewardXp: number;
+        expiresAt: Date;
+    },
+    db: Queryable = pool
+): Promise<ComebackCampaign | null> {
+    const result = await db.query<ComebackCampaign>(
+        `
+        INSERT INTO comeback_campaigns (
+            user_id,
+            trigger_activity_event_id,
+            inactivity_days,
+            reward_xp,
+            status,
+            expires_at
+        )
+        VALUES ($1, $2, $3, $4, 'active', $5)
+        ON CONFLICT DO NOTHING
+        RETURNING *
+        `,
+        [userId, triggerActivityEventId, inactivityDays, rewardXp, expiresAt]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function completeComebackCampaign(
+    campaignId: number,
+    completedActivityEventId: number,
+    completedAt: Date,
+    db: Queryable = pool
+): Promise<ComebackCampaign | null> {
+    const result = await db.query<ComebackCampaign>(
+        `
+        UPDATE comeback_campaigns
+        SET status = 'completed',
+            completed_activity_event_id = $2,
+            completed_at = $3
+        WHERE id = $1
+          AND status = 'active'
+        RETURNING *
+        `,
+        [campaignId, completedActivityEventId, completedAt]
+    );
+
+    return result.rows[0] || null;
 }
 
 export async function createChallenge(
