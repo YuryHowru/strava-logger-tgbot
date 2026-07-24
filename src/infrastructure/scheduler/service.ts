@@ -1,10 +1,12 @@
 import type { Telegraf } from 'telegraf';
 import { getActiveChatIds, reserveScheduledReport } from '../database/service';
-import { getCurrentWeekPeriod, getPreviousWeekPeriod, isMonthlyReportDue, isWeeklyReportDue } from '../../features/scheduling/dates';
+import { getCurrentWeekPeriod, getPreviousMonthPeriod, getPreviousWeekPeriod, isMonthlyReportDue, isWeeklyReportDue } from '../../features/scheduling/dates';
 import { buildWeeklySummary } from '../../features/weekly/service';
 import { prepareWeeklySummaryMessage } from '../../features/weekly/messages';
 import { createWeeklyQuestsForActiveChats } from '../../features/quests/service';
 import { createWeeklyBossBattles } from '../../features/boss/service';
+import { buildMonthlyAwards } from '../../features/monthly/service';
+import { prepareMonthlyAwardsMessage } from '../../features/monthly/messages';
 import { errorLog, log } from '../../shared/logger';
 
 const SCHEDULER_INTERVAL_MS = 14 * 60 * 1000;
@@ -40,6 +42,37 @@ async function sendWeeklyReports(bot: Telegraf, now: Date): Promise<void> {
     }
 }
 
+async function sendMonthlyAwards(bot: Telegraf, now: Date): Promise<void> {
+    const period = getPreviousMonthPeriod(now);
+    const chatIds = await getActiveChatIds();
+
+    for (const chatId of chatIds) {
+        try {
+            const reserved = await reserveScheduledReport({
+                chatId,
+                reportType: 'monthly',
+                periodKey: period.key,
+            });
+
+            if (!reserved) {
+                continue;
+            }
+
+            const awards = await buildMonthlyAwards({
+                chatId,
+                periodKey: period.key,
+                startDate: period.startDate,
+                endDate: period.endDate,
+            });
+
+            await bot.telegram.sendMessage(chatId, prepareMonthlyAwardsMessage(period.key, awards), { parse_mode: 'Markdown' });
+            log('SCHEDULER', `Monthly awards sent to chat ${chatId} for ${period.key}`);
+        } catch (error) {
+            errorLog('SCHEDULER', `Failed to send monthly awards to chat ${chatId}`, error);
+        }
+    }
+}
+
 export async function runScheduledJobs(bot: Telegraf, now = new Date()): Promise<void> {
     if (isWeeklyReportDue(now)) {
         const currentWeek = getCurrentWeekPeriod(now);
@@ -48,7 +81,7 @@ export async function runScheduledJobs(bot: Telegraf, now = new Date()): Promise
     }
 
     if (isMonthlyReportDue(now)) {
-        log('SCHEDULER', 'Monthly report window reached. Monthly awards are not implemented yet.');
+        await sendMonthlyAwards(bot, now);
     }
 }
 

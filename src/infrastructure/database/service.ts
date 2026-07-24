@@ -5,6 +5,7 @@ import type { UserAchievement, BadgeKey, ChallengeWinnerBadge } from '../../feat
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from '../../features/challenges/types';
 import type { BossBattle, BossContributor } from '../../features/boss/types';
 import type { ComebackCampaign } from '../../features/comeback/types';
+import type { MonthlyAwardCandidate, MonthlyAwardType, MonthlyComebackCandidate } from '../../features/monthly/types';
 import type { QuestType, UserQuest } from '../../features/quests/types';
 import type { WeeklySummaryRow } from '../../features/weekly/types';
 import { log } from '../../shared/logger';
@@ -823,6 +824,94 @@ export async function getBossParticipants(
     );
 
     return result.rows;
+}
+
+export async function getMonthlyAwardCandidates(
+    chatId: string,
+    startDate: string,
+    endDate: string,
+    db: Queryable = pool
+): Promise<MonthlyAwardCandidate[]> {
+    const result = await db.query<MonthlyAwardCandidate>(
+        `
+        SELECT
+            u.id AS user_id,
+            u.username,
+            COUNT(a.id)::int AS activities_count,
+            COALESCE(SUM(a.earned_xp), 0)::int AS total_xp,
+            COUNT(DISTINCT a.local_activity_date)::int AS active_days
+        FROM activity_events a
+        JOIN users u ON u.id = a.user_id
+        WHERE a.chat_id = $1
+          AND a.local_activity_date >= $2::date
+          AND a.local_activity_date < $3::date
+        GROUP BY u.id, u.username
+        ORDER BY total_xp DESC, activities_count DESC, u.username ASC
+        `,
+        [chatId, startDate, endDate]
+    );
+
+    return result.rows.map((row) => ({
+        ...row,
+        activities_count: Number(row.activities_count),
+        total_xp: Number(row.total_xp),
+        active_days: Number(row.active_days),
+    }));
+}
+
+export async function getMonthlyComebackCandidate(
+    chatId: string,
+    startDate: string,
+    endDate: string,
+    db: Queryable = pool
+): Promise<MonthlyComebackCandidate | null> {
+    const result = await db.query<MonthlyComebackCandidate>(
+        `
+        SELECT
+            u.id AS user_id,
+            u.username,
+            c.inactivity_days
+        FROM comeback_campaigns c
+        JOIN users u ON u.id = c.user_id
+        WHERE u.chatid::text = $1
+          AND c.started_at >= $2::date
+          AND c.started_at < $3::date
+        ORDER BY c.inactivity_days DESC, c.started_at ASC, u.username ASC
+        LIMIT 1
+        `,
+        [chatId, startDate, endDate]
+    );
+
+    return result.rows[0] ? { ...result.rows[0], inactivity_days: Number(result.rows[0].inactivity_days) } : null;
+}
+
+export async function createMonthlyAward(
+    {
+        chatId,
+        periodKey,
+        awardType,
+        winnerUserId,
+        rewardXp,
+    }: {
+        chatId: string;
+        periodKey: string;
+        awardType: MonthlyAwardType;
+        winnerUserId: number;
+        rewardXp: number;
+    },
+    db: Queryable = pool
+): Promise<boolean> {
+    const result = await db.query(
+        `
+        INSERT INTO monthly_awards (chat_id, period_key, award_type, winner_user_id, reward_xp)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (chat_id, period_key, award_type) DO NOTHING
+        RETURNING id
+        `,
+        [chatId, periodKey, awardType, winnerUserId, rewardXp]
+    );
+
+    return Boolean(result.rowCount);
 }
 
 export async function createChallenge(
