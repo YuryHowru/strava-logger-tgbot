@@ -3,6 +3,7 @@ import type { Queryable } from './types';
 import type { ActivityEvent, LevelInfo, User } from '../../features/activities/types';
 import type { UserAchievement, BadgeKey, ChallengeWinnerBadge } from '../../features/achievements/types';
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from '../../features/challenges/types';
+import type { WeeklySummaryRow } from '../../features/weekly/types';
 import { log } from '../../shared/logger';
 
 type AuthSession = {
@@ -143,6 +144,48 @@ export async function updateUserXpAndLevel(
     db: Queryable = pool
 ): Promise<void> {
     await db.query('UPDATE users SET xp = $1, level = $2 WHERE id = $3', [xp, level, userId]);
+}
+
+export async function grantUserXpOnce(
+    {
+        userId,
+        grantType,
+        periodKey,
+        xp,
+        reason,
+    }: {
+        userId: number;
+        grantType: string;
+        periodKey: string;
+        xp: number;
+        reason: string;
+    },
+    db: Queryable = pool
+): Promise<boolean> {
+    const grantResult = await db.query(
+        `
+        INSERT INTO xp_grants (user_id, grant_type, period_key, xp, reason)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (user_id, grant_type, period_key) DO NOTHING
+        RETURNING id
+        `,
+        [userId, grantType, periodKey, xp, reason]
+    );
+
+    if (!grantResult.rowCount) {
+        return false;
+    }
+
+    const user = await getUserById(userId, db);
+    if (!user) {
+        throw new Error(`Cannot grant XP to missing user ${userId}`);
+    }
+
+    const newXp = user.xp + xp;
+    const levelInfo = await findLevelInDb(newXp, db);
+    await updateUserXpAndLevel(user.id, newXp, levelInfo.level, db);
+
+    return true;
 }
 
 export async function createActivityEvent(
@@ -299,6 +342,85 @@ export async function getChallengeWinnerBadges(
     );
 
     return result.rows;
+}
+
+export async function getActiveChatIds(db: Queryable = pool): Promise<string[]> {
+    const result = await db.query<{ chatid: string }>(
+        `
+        SELECT DISTINCT chatid::text AS chatid
+        FROM users
+        WHERE chatid IS NOT NULL
+        ORDER BY chatid::text ASC
+        `
+    );
+
+    return result.rows.map((row) => row.chatid);
+}
+
+export async function reserveScheduledReport(
+    {
+        chatId,
+        reportType,
+        periodKey,
+    }: {
+        chatId: string;
+        reportType: string;
+        periodKey: string;
+    },
+    db: Queryable = pool
+): Promise<boolean> {
+    const result = await db.query(
+        `
+        INSERT INTO scheduled_reports (chat_id, report_type, period_key)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (chat_id, report_type, period_key) DO NOTHING
+        RETURNING id
+        `,
+        [chatId, reportType, periodKey]
+    );
+
+    return Boolean(result.rowCount);
+}
+
+export async function getWeeklySummaryRows(
+    {
+        chatId,
+        startDate,
+        endDate,
+    }: {
+        chatId: string;
+        startDate: string;
+        endDate: string;
+    },
+    db: Queryable = pool
+): Promise<WeeklySummaryRow[]> {
+    const result = await db.query<WeeklySummaryRow>(
+        `
+        SELECT
+            u.id AS user_id,
+            u.username,
+            COUNT(a.id)::int AS activities_count,
+            COALESCE(SUM(a.earned_xp), 0)::int AS total_xp,
+            COALESCE(SUM(COALESCE(a.distance_m, 0)), 0)::float AS total_distance_m,
+            COUNT(DISTINCT a.local_activity_date)::int AS active_days
+        FROM activity_events a
+        JOIN users u ON u.id = a.user_id
+        WHERE a.chat_id = $1
+          AND a.local_activity_date >= $2::date
+          AND a.local_activity_date < $3::date
+        GROUP BY u.id, u.username
+        ORDER BY total_xp DESC, activities_count DESC, u.username ASC
+        `,
+        [chatId, startDate, endDate]
+    );
+
+    return result.rows.map((row) => ({
+        ...row,
+        activities_count: Number(row.activities_count),
+        total_xp: Number(row.total_xp),
+        total_distance_m: Number(row.total_distance_m),
+        active_days: Number(row.active_days),
+    }));
 }
 
 export async function createChallenge(

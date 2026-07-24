@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { setupRoutes } from './routes/routes';
 import { createBot, launchBot, stopBot } from './infrastructure/bot/config';
 import { initializeDatabase } from './infrastructure/database/bootstrap';
+import { startScheduledJobs } from './infrastructure/scheduler/service';
 import { log } from './shared/logger';
 
 dotenv.config();
@@ -23,6 +24,7 @@ async function bootstrap() {
         }, 14 * 60 * 1000);
     });
 
+    startScheduledJobs(bot);
     await launchBot(bot);
 
     process.once('SIGINT', () => stopBot(bot, 'SIGINT'));
