@@ -23,6 +23,7 @@ import { refreshUserToken } from '../../features/auth/service';
 import { prepareChallengeProgressMessage } from '../../features/challenges/messages';
 import { finalizeChallenge, isChallengeExpired } from '../../features/challenges/service';
 import { processComebackCampaign } from '../../features/comeback/service';
+import { processUserQuests } from '../../features/quests/service';
 import { errorLog, log } from '../../shared/logger';
 import { PoolClient } from 'pg';
 
@@ -51,6 +52,7 @@ type ActivityProcessingResult = {
     challengeProgressMessage: string;
     challengeAnnouncement: string | null;
     comebackMessage: string | null;
+    questMessages: string[];
 };
 
 function isCreateActivityEvent(body: WebhookRequest['body']): body is {
@@ -254,7 +256,7 @@ async function processActivityUpdate({
             client
         );
 
-        const [activityBadgeKeys, challengeUpdate, comebackResult] = await Promise.all([
+        const [activityBadgeKeys, challengeUpdate] = await Promise.all([
             getUnlockedBadges({
                 client,
                 user,
@@ -267,12 +269,17 @@ async function processActivityUpdate({
                 chatId: String(user.chatid),
                 userId: user.id,
             }),
-            processComebackCampaign({
-                user,
-                activityEvent,
-                db: client,
-            }),
         ]);
+        const comebackResult = await processComebackCampaign({
+            user,
+            activityEvent,
+            db: client,
+        });
+        const questResult = await processUserQuests({
+            user,
+            activityEvent,
+            db: client,
+        });
 
         return {
             earnedXp: progress.earnedXp,
@@ -285,6 +292,7 @@ async function processActivityUpdate({
             challengeProgressMessage: challengeUpdate.challengeProgressMessage,
             challengeAnnouncement: challengeUpdate.challengeAnnouncement,
             comebackMessage: comebackResult.message,
+            questMessages: questResult.completedMessages,
         };
     });
 }
@@ -311,6 +319,7 @@ function buildWebhookMessage({
             nextLevelRequiredXp: processingResult.nextLevelRequiredXp,
             xpMultiplier: processingResult.xpMultiplier,
         }),
+        ...processingResult.questMessages,
         processingResult.comebackMessage,
         processingResult.challengeProgressMessage || null,
         `[Открыть в Страве](https://www.strava.com/activities/${activityId})`,

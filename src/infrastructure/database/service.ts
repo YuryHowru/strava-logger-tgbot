@@ -4,6 +4,7 @@ import type { ActivityEvent, LevelInfo, User } from '../../features/activities/t
 import type { UserAchievement, BadgeKey, ChallengeWinnerBadge } from '../../features/achievements/types';
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from '../../features/challenges/types';
 import type { ComebackCampaign } from '../../features/comeback/types';
+import type { QuestType, UserQuest } from '../../features/quests/types';
 import type { WeeklySummaryRow } from '../../features/weekly/types';
 import { log } from '../../shared/logger';
 
@@ -358,6 +359,20 @@ export async function getActiveChatIds(db: Queryable = pool): Promise<string[]> 
     return result.rows.map((row) => row.chatid);
 }
 
+export async function getChatUsers(chatId: string, db: Queryable = pool): Promise<User[]> {
+    const result = await db.query<User>(
+        `
+        SELECT *
+        FROM users
+        WHERE chatid::text = $1
+        ORDER BY username ASC
+        `,
+        [chatId]
+    );
+
+    return result.rows;
+}
+
 export async function reserveScheduledReport(
     {
         chatId,
@@ -533,6 +548,117 @@ export async function completeComebackCampaign(
         RETURNING *
         `,
         [campaignId, completedActivityEventId, completedAt]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function getUserActivityStatsForPeriod(
+    userId: number,
+    startDate: string,
+    endDate: string,
+    db: Queryable = pool
+): Promise<{ activities_count: number; total_xp: number; active_days: number }> {
+    const result = await db.query<{ activities_count: string; total_xp: string; active_days: string }>(
+        `
+        SELECT
+            COUNT(id)::text AS activities_count,
+            COALESCE(SUM(earned_xp), 0)::text AS total_xp,
+            COUNT(DISTINCT local_activity_date)::text AS active_days
+        FROM activity_events
+        WHERE user_id = $1
+          AND local_activity_date >= $2::date
+          AND local_activity_date < $3::date
+        `,
+        [userId, startDate, endDate]
+    );
+    const row = result.rows[0];
+
+    return {
+        activities_count: Number.parseInt(row?.activities_count ?? '0', 10),
+        total_xp: Number.parseInt(row?.total_xp ?? '0', 10),
+        active_days: Number.parseInt(row?.active_days ?? '0', 10),
+    };
+}
+
+export async function getUserRecentActivityStats(
+    userId: number,
+    startDate: string,
+    endDate: string,
+    db: Queryable = pool
+): Promise<{ activities_count: number; total_xp: number; active_days: number }> {
+    return getUserActivityStatsForPeriod(userId, startDate, endDate, db);
+}
+
+export async function createUserQuest(
+    {
+        userId,
+        periodKey,
+        questType,
+        targetValue,
+        rewardXp,
+    }: {
+        userId: number;
+        periodKey: string;
+        questType: QuestType;
+        targetValue: number;
+        rewardXp: number;
+    },
+    db: Queryable = pool
+): Promise<UserQuest | null> {
+    const result = await db.query<UserQuest>(
+        `
+        INSERT INTO user_quests (user_id, period_key, quest_type, target_value, reward_xp, status)
+        VALUES ($1, $2, $3, $4, $5, 'active')
+        ON CONFLICT (user_id, period_key, quest_type) DO NOTHING
+        RETURNING *
+        `,
+        [userId, periodKey, questType, targetValue, rewardXp]
+    );
+
+    return result.rows[0] || null;
+}
+
+export async function getUserQuestsForPeriod(
+    userId: number,
+    periodKey: string,
+    db: Queryable = pool
+): Promise<UserQuest[]> {
+    const result = await db.query<UserQuest>(
+        `
+        SELECT *
+        FROM user_quests
+        WHERE user_id = $1
+          AND period_key = $2
+        ORDER BY
+          CASE quest_type
+            WHEN 'activity_count' THEN 1
+            WHEN 'xp' THEN 2
+            WHEN 'active_days' THEN 3
+            ELSE 4
+          END
+        `,
+        [userId, periodKey]
+    );
+
+    return result.rows;
+}
+
+export async function completeUserQuest(
+    questId: number,
+    completedAt: Date,
+    db: Queryable = pool
+): Promise<UserQuest | null> {
+    const result = await db.query<UserQuest>(
+        `
+        UPDATE user_quests
+        SET status = 'completed',
+            completed_at = $2
+        WHERE id = $1
+          AND status = 'active'
+        RETURNING *
+        `,
+        [questId, completedAt]
     );
 
     return result.rows[0] || null;

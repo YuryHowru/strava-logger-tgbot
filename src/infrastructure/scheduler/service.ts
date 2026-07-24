@@ -1,8 +1,9 @@
 import type { Telegraf } from 'telegraf';
 import { getActiveChatIds, reserveScheduledReport } from '../database/service';
-import { getPreviousWeekPeriod, isMonthlyReportDue, isWeeklyReportDue } from '../../features/scheduling/dates';
+import { getCurrentWeekPeriod, getPreviousWeekPeriod, isMonthlyReportDue, isWeeklyReportDue } from '../../features/scheduling/dates';
 import { buildWeeklySummary } from '../../features/weekly/service';
 import { prepareWeeklySummaryMessage } from '../../features/weekly/messages';
+import { createWeeklyQuestsForActiveChats } from '../../features/quests/service';
 import { errorLog, log } from '../../shared/logger';
 
 const SCHEDULER_INTERVAL_MS = 14 * 60 * 1000;
@@ -40,6 +41,7 @@ async function sendWeeklyReports(bot: Telegraf, now: Date): Promise<void> {
 
 export async function runScheduledJobs(bot: Telegraf, now = new Date()): Promise<void> {
     if (isWeeklyReportDue(now)) {
+        await createWeeklyQuestsForActiveChats(getCurrentWeekPeriod(now));
         await sendWeeklyReports(bot, now);
     }
 
