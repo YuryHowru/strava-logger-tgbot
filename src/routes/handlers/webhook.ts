@@ -14,7 +14,7 @@ import { getBot } from '../../infrastructure/bot/config';
 import { getFullActivityInfo } from '../../infrastructure/strava/service';
 import { getActivityBadgeCandidates, formatUnlockedBadges } from '../../features/achievements/service';
 import type { BadgeKey } from '../../features/achievements/types';
-import { getBeautifulStatus, getStreakData } from '../../features/activities/calculations';
+import { formatStreakMessage, getBeautifulStatus, getStreakData } from '../../features/activities/calculations';
 import { getActivityLocalDate, getActivityStartLocal, getActivityStartUtc, getActivityType } from '../../features/activities/helpers';
 import { prepareActivityMessage } from '../../features/activities/messages';
 import type { User } from '../../features/activities/types';
@@ -48,6 +48,7 @@ type ActivityProcessingResult = {
     nextLevelRequiredXp: number;
     streakMessage: string;
     xpMultiplier: number;
+    showXpMultiplier: boolean;
     beautifulBonusMessage: string | null;
     unlockedBadgeKeys: BadgeKey[];
     challengeProgressMessage: string;
@@ -113,20 +114,24 @@ async function getWebhookActivity(user: User, activityId: number): Promise<any> 
 }
 
 async function getActivityProgress(user: User, activity: any, eventTime: number) {
-    const { streakMessage, newStreak, xpMultiplier } = getStreakData(user, eventTime);
+    const streakData = getStreakData(user, eventTime);
+    const { newStreak, xpMultiplier } = streakData;
     const { beautifulBonusXp, beautifulBonusMessage } = getBeautifulStatus(activity);
-    const { newLevel, earnedXp, nextLevelRequiredXp } = await calculateLevelInfo({
+    const { newLevel, earnedXp, nextLevelRequiredXp, xpWasCapped } = await calculateLevelInfo({
         activity,
         user,
         xpMultiplier,
         beautifulBonusXp,
     });
+    const hasEarnedXp = earnedXp > 0;
+    const showXpMultiplier = hasEarnedXp && !xpWasCapped;
 
     return {
-        streakMessage,
+        streakMessage: formatStreakMessage(streakData, hasEarnedXp),
         newStreak,
         xpMultiplier,
-        beautifulBonusMessage,
+        showXpMultiplier,
+        beautifulBonusMessage: showXpMultiplier ? beautifulBonusMessage : null,
         newLevel,
         earnedXp,
         nextLevelRequiredXp,
@@ -294,6 +299,7 @@ async function processActivityUpdate({
             nextLevelRequiredXp: progress.nextLevelRequiredXp,
             streakMessage: progress.streakMessage,
             xpMultiplier: progress.xpMultiplier,
+            showXpMultiplier: progress.showXpMultiplier,
             beautifulBonusMessage: progress.beautifulBonusMessage,
             unlockedBadgeKeys: [...activityBadgeKeys, ...comebackResult.unlockedBadgeKeys],
             challengeProgressMessage: challengeUpdate.challengeProgressMessage,
@@ -327,6 +333,7 @@ function buildWebhookMessage({
             newLevel: processingResult.newLevel,
             nextLevelRequiredXp: processingResult.nextLevelRequiredXp,
             xpMultiplier: processingResult.xpMultiplier,
+            showXpMultiplier: processingResult.showXpMultiplier,
         }),
         ...processingResult.questMessages,
         processingResult.comebackMessage,
@@ -336,7 +343,11 @@ function buildWebhookMessage({
         `[Открыть в Страве](https://www.strava.com/activities/${activityId})`,
     ];
 
-    return messageParts.filter(Boolean).join('\n');
+    return messageParts
+        .filter((part): part is string => Boolean(part))
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join('\n\n');
 }
 
 async function sendWebhookMessages({

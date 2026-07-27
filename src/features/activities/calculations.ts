@@ -114,25 +114,50 @@ function getStartOfDay(timestampSeconds: number): Date {
     return date;
 }
 
-function getDefaultStreakMessage(multiplier: number): string {
-    return `
-🚀 Серия тренировок - 1 день.
-Продолжив завтра, получишь бонус *${multiplier}x*!
-    `;
+type StreakKind = 'default' | 'same_day' | 'continued';
+
+type StreakData = {
+    xpMultiplier: number;
+    newStreak: number;
+    kind: StreakKind;
+    bonusMultiplier: number;
+};
+
+const FIXED_STREAK_MULTIPLIER = 1.25;
+
+function createStreakData(kind: StreakKind, newStreak: number, xpMultiplier: number): StreakData {
+    return {
+        kind,
+        newStreak,
+        xpMultiplier,
+        bonusMultiplier: FIXED_STREAK_MULTIPLIER,
+    };
 }
 
-function getSameDayStreakMessage(newStreak: number, multiplier: number): string {
-    return `
-💪 Легенда. Несколько тренировок в один день.
-${newStreak > 1 ? `Бонус серии *${multiplier}x* всё ещё работает!` : `Продолжай завтра, чтобы получить бонус *${multiplier}x*!`}
-        `;
+function getDefaultStreakMessage(multiplier: number, showXpBonus: boolean): string {
+    return [
+        '🚀 Серия тренировок - 1 день.',
+        showXpBonus ? `Продолжив завтра, получишь бонус *${multiplier}x*!` : null,
+    ]
+        .filter(Boolean)
+        .join('\n');
 }
 
-function getContinuedStreakMessage(newStreak: number, multiplier: number): string {
-    return `
-💥 Серия тренировок — *${newStreak} ${getDaysWord(newStreak)} подряд*!!
-Активен бонус серии: *${multiplier}x* к XP!
-        `;
+function getSameDayStreakMessage(newStreak: number, multiplier: number, showXpBonus: boolean): string {
+    const bonusLine = newStreak > 1
+        ? `Бонус серии *${multiplier}x* всё ещё работает!`
+        : `Продолжай завтра, чтобы получить бонус *${multiplier}x*!`;
+
+    return ['💪 Легенда. Несколько тренировок в один день.', showXpBonus ? bonusLine : null].filter(Boolean).join('\n');
+}
+
+function getContinuedStreakMessage(newStreak: number, multiplier: number, showXpBonus: boolean): string {
+    return [
+        `💥 Серия тренировок — *${newStreak} ${getDaysWord(newStreak)} подряд*!!`,
+        showXpBonus ? `Активен бонус серии: *${multiplier}x* к XP!` : null,
+    ]
+        .filter(Boolean)
+        .join('\n');
 }
 
 function getDaysWord(num: number) {
@@ -143,14 +168,12 @@ function getDaysWord(num: number) {
     return 'дней';
 }
 
-export function getStreakData(user: User, activityDate: number) {
+export function getStreakData(user: User, activityDate: number): StreakData {
     const today = getStartOfDay(activityDate);
-
-    const FIXED_MULTIPLIER = 1.25;
 
     if (!user.last_activity) {
         log('LOGIC', 'First activity ever for user. No streak bonus.');
-        return { streakMessage: getDefaultStreakMessage(FIXED_MULTIPLIER), xpMultiplier: 1, newStreak: 1 };
+        return createStreakData('default', 1, 1);
     }
 
     const lastDate = new Date(user.last_activity);
@@ -161,29 +184,40 @@ export function getStreakData(user: User, activityDate: number) {
 
     if (dayDifference > 1) {
         log('LOGIC', 'Streak lost (difference > 1 day). Resetting to 1.');
-        return { streakMessage: getDefaultStreakMessage(FIXED_MULTIPLIER), xpMultiplier: 1, newStreak: 1 };
+        return createStreakData('default', 1, 1);
     }
 
     if (dayDifference === 1) {
         const newStreak = user.streak_count + 1;
 
-        log('LOGIC', `Streak maintained! New streak: ${newStreak}, Multiplier: ${FIXED_MULTIPLIER}`);
+        log('LOGIC', `Streak maintained! New streak: ${newStreak}, Multiplier: ${FIXED_STREAK_MULTIPLIER}`);
 
-        return {
-            streakMessage: getContinuedStreakMessage(newStreak, FIXED_MULTIPLIER),
-            xpMultiplier: FIXED_MULTIPLIER,
-            newStreak,
-        };
+        return createStreakData('continued', newStreak, FIXED_STREAK_MULTIPLIER);
     }
 
     if (dayDifference === 0) {
         const newStreak = user.streak_count;
-        const xpMultiplier = newStreak > 1 ? FIXED_MULTIPLIER : 1;
+        const xpMultiplier = newStreak > 1 ? FIXED_STREAK_MULTIPLIER : 1;
 
         log('LOGIC', `Same day activity. Keeping streak: ${newStreak}. Multiplier active: ${xpMultiplier > 1}`);
-        return { streakMessage: getSameDayStreakMessage(newStreak, FIXED_MULTIPLIER), xpMultiplier, newStreak };
+        return createStreakData('same_day', newStreak, xpMultiplier);
     }
 
     log('LOGIC', 'Fallback streak case hit');
-    return { streakMessage: getDefaultStreakMessage(FIXED_MULTIPLIER), xpMultiplier: 1, newStreak: 1 };
+    return createStreakData('default', 1, 1);
+}
+
+export function formatStreakMessage(
+    streak: Pick<StreakData, 'kind' | 'newStreak' | 'bonusMultiplier'>,
+    showXpBonus: boolean
+): string {
+    if (streak.kind === 'continued') {
+        return getContinuedStreakMessage(streak.newStreak, streak.bonusMultiplier, showXpBonus);
+    }
+
+    if (streak.kind === 'same_day') {
+        return getSameDayStreakMessage(streak.newStreak, streak.bonusMultiplier, showXpBonus);
+    }
+
+    return getDefaultStreakMessage(streak.bonusMultiplier, showXpBonus);
 }

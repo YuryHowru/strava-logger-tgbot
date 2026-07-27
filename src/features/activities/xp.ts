@@ -14,35 +14,68 @@ export async function calculateLevelInfo({
     user: User;
     xpMultiplier: number;
     beautifulBonusXp: number;
-}): Promise<{ earnedXp: number; newLevel: number; nextLevelRequiredXp: number }> {
+}): Promise<{ earnedXp: number; newLevel: number; nextLevelRequiredXp: number; xpWasCapped: boolean }> {
     const baseXp = calculateEarnedXp(activity, xpMultiplier);
-    const earnedXp = baseXp + beautifulBonusXp;
+    const rawEarnedXp = baseXp + beautifulBonusXp;
 
-    log('LOGIC', `Total Earned XP: ${earnedXp} (Base: ${baseXp} + Bonus: ${beautifulBonusXp})`);
+    log('LOGIC', `Total Earned XP before cap: ${rawEarnedXp} (Base: ${baseXp} + Bonus: ${beautifulBonusXp})`);
 
-    const newXp = user.xp + earnedXp;
-    const newLevelInfo = await findLevelInDb(newXp);
+    if (user.level >= MAX_LVL) {
+        return { earnedXp: 0, newLevel: MAX_LVL, nextLevelRequiredXp: user.xp, xpWasCapped: true };
+    }
 
-    return { earnedXp, newLevel: newLevelInfo.level, nextLevelRequiredXp: newLevelInfo.total_required_xp };
+    const rawNewXp = user.xp + rawEarnedXp;
+    const newLevelInfo = await findLevelInDb(rawNewXp);
+    const earnedXp =
+        newLevelInfo.level >= MAX_LVL
+            ? Math.max(0, Math.min(rawEarnedXp, newLevelInfo.total_required_xp - user.xp))
+            : rawEarnedXp;
+
+    const xpWasCapped = earnedXp !== rawEarnedXp;
+
+    if (xpWasCapped) {
+        log('LOGIC', `XP capped at max level: ${rawEarnedXp} -> ${earnedXp}`);
+    }
+
+    return {
+        earnedXp,
+        newLevel: newLevelInfo.level,
+        nextLevelRequiredXp: newLevelInfo.total_required_xp,
+        xpWasCapped,
+    };
 }
 
-export function prepareGamifyMessage({ user, earnedXp, newLevel, nextLevelRequiredXp, xpMultiplier }: { user: User; earnedXp: number; newLevel: number; nextLevelRequiredXp: number; xpMultiplier: number }): string {
-    if (user.level === MAX_LVL) {
-        return `Легенда.`;
+export function prepareGamifyMessage({
+    user,
+    earnedXp,
+    newLevel,
+    nextLevelRequiredXp,
+    xpMultiplier,
+    showXpMultiplier,
+}: {
+    user: User;
+    earnedXp: number;
+    newLevel: number;
+    nextLevelRequiredXp: number;
+    xpMultiplier: number;
+    showXpMultiplier: boolean;
+}): string {
+    if (earnedXp <= 0) {
+        return '';
     }
 
     const newXp = user.xp + earnedXp;
     const levelUpMessage =
         newLevel > user.level ? `🎉 ${user.username.replaceAll('_', ' ')} теперь *${rankSystem[newLevel]}* 🚀\n` : '';
-    const multiMessage = xpMultiplier > 1 ? ` (*${xpMultiplier.toFixed(2)}x*)` : '';
+    const multiMessage = showXpMultiplier && xpMultiplier > 1 ? ` (*${xpMultiplier.toFixed(2)}x*)` : '';
 
     return [
-        levelUpMessage ? `${levelUpMessage}\n` : '',
-        `
-🔥 +*${earnedXp}* XP${multiMessage}
-🏆 Прогресс: ${newXp}/${nextLevelRequiredXp} XP
-  `,
-    ].join('');
+        levelUpMessage.trim(),
+        `🔥 +*${earnedXp}* XP${multiMessage}`,
+        `🏆 Прогресс: ${newXp}/${nextLevelRequiredXp} XP`,
+    ]
+        .filter(Boolean)
+        .join('\n');
 }
 
 export function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequiredXp }: { user: User; xpToAdd: number; newLevel: number; nextLevelRequiredXp: number }): string {
