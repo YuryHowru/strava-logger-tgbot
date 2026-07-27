@@ -4,7 +4,8 @@ import { getCurrentWeekPeriod, getPreviousMonthPeriod, getPreviousWeekPeriod, is
 import { buildWeeklySummary } from '../../features/weekly/service';
 import { prepareWeeklySummaryMessage } from '../../features/weekly/messages';
 import { createWeeklyQuestsForActiveChats } from '../../features/quests/service';
-import { createWeeklyBossBattles } from '../../features/boss/service';
+import { createWeeklyBossBattles, ensureWeeklyBossBattleForChat, expireBossBattleForPeriod } from '../../features/boss/service';
+import { prepareBossExpiredMessage, prepareBossSpawnMessage } from '../../features/boss/messages';
 import { buildMonthlyAwards } from '../../features/monthly/service';
 import { prepareMonthlyAwardsMessage } from '../../features/monthly/messages';
 import { errorLog, log } from '../../shared/logger';
@@ -13,6 +14,7 @@ const SCHEDULER_INTERVAL_MS = 14 * 60 * 1000;
 
 async function sendWeeklyReports(bot: Telegraf, now: Date): Promise<void> {
     const period = getPreviousWeekPeriod(now);
+    const currentWeek = getCurrentWeekPeriod(now);
     const chatIds = await getActiveChatIds();
 
     for (const chatId of chatIds) {
@@ -27,6 +29,8 @@ async function sendWeeklyReports(bot: Telegraf, now: Date): Promise<void> {
                 continue;
             }
 
+            const expiredBoss = await expireBossBattleForPeriod(chatId, period);
+            const newBoss = await ensureWeeklyBossBattleForChat(chatId, currentWeek);
             const summary = await buildWeeklySummary({
                 chatId,
                 periodKey: period.key,
@@ -35,6 +39,10 @@ async function sendWeeklyReports(bot: Telegraf, now: Date): Promise<void> {
             });
 
             await bot.telegram.sendMessage(chatId, prepareWeeklySummaryMessage(summary), { parse_mode: 'Markdown' });
+            if (expiredBoss) {
+                await bot.telegram.sendMessage(chatId, prepareBossExpiredMessage(expiredBoss), { parse_mode: 'Markdown' });
+            }
+            await bot.telegram.sendMessage(chatId, prepareBossSpawnMessage(newBoss), { parse_mode: 'Markdown' });
             log('SCHEDULER', `Weekly report sent to chat ${chatId} for ${period.key}`);
         } catch (error) {
             errorLog('SCHEDULER', `Failed to send weekly report to chat ${chatId}`, error);

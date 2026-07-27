@@ -66,13 +66,13 @@ export function prepareGamifyMessage({
 
     const newXp = user.xp + earnedXp;
     const levelUpMessage =
-        newLevel > user.level ? `🎉 ${user.username.replaceAll('_', ' ')} теперь *${rankSystem[newLevel]}* 🚀\n` : '';
+        newLevel > user.level ? `🎉 ${user.username.replaceAll('_', ' ')} получает ранг *${rankSystem[newLevel]}* 🚀\n` : '';
     const multiMessage = showXpMultiplier && xpMultiplier > 1 ? ` (*${xpMultiplier.toFixed(2)}x*)` : '';
 
     return [
         levelUpMessage.trim(),
         `🔥 +*${earnedXp}* XP${multiMessage}`,
-        `🏆 Прогресс: ${newXp}/${nextLevelRequiredXp} XP`,
+        `🏆 Сейчас: ${newXp}/${nextLevelRequiredXp} XP`,
     ]
         .filter(Boolean)
         .join('\n');
@@ -84,10 +84,10 @@ export function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequired
     }
 
     const newXp = user.xp + xpToAdd;
-    const levelUpMessage = newLevel > user.level ? `🎉 🚀 Поднимается до уровня: ` : '';
+    const levelUpMessage = newLevel > user.level ? `🎉 🚀 Новый уровень: ` : '';
 
     return `
-    🔥 ${user.username} получает +${xpToAdd} XP! А так можно было?
+    🔥 ${user.username} забирает +${xpToAdd} XP.
     🏆 ${levelUpMessage} ${rankSystem[newLevel]}, ${newXp}/${nextLevelRequiredXp} XP
   `;
 }

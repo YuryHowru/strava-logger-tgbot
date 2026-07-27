@@ -60,7 +60,7 @@ function getEffortMetric(activityType: string, movingTime: number, distance: num
     }
 
     if (SPEED_ACTIVITIES.includes(activityType)) {
-        return `*Скорость*: ${calculateSpeed(movingTime, distance)}`;
+        return `*Средняя*: ${calculateSpeed(movingTime, distance)}`;
     }
 
     return null;
@@ -74,17 +74,17 @@ function getActivityStats(activity: any, activityType: string): string[] {
 
     if (!isDistanceActivity) {
         return [
-            `*Продолжительность*: ${formatTime(movingTime)}`,
-            `*Калории*: ${(activity.calories ?? 0).toFixed(0)} ккал`,
+            `*Длительность*: ${formatTime(movingTime)}`,
+            `*Энергия*: ${(activity.calories ?? 0).toFixed(0)} ккал`,
         ];
     }
 
     const effortMetric = hasDistance ? getEffortMetric(activityType, movingTime, distance) : null;
-    const elevationGain = activity.total_elevation_gain ? `*Набор*: ${activity.total_elevation_gain.toFixed(0)} м` : null;
+    const elevationGain = activity.total_elevation_gain ? `*Подъём*: ${activity.total_elevation_gain.toFixed(0)} м` : null;
 
     return [
-        `*Дистанция*: ${formatDistance(distance)}`,
-        `*Время*: ${formatTime(movingTime)}`,
+        `*Маршрут*: ${formatDistance(distance)}`,
+        `*Длительность*: ${formatTime(movingTime)}`,
         effortMetric,
         elevationGain,
     ].filter((line): line is string => Boolean(line));
@@ -92,7 +92,7 @@ function getActivityStats(activity: any, activityType: string): string[] {
 
 export function prepareActivityMessage({ activity, user, newLevel }: { activity: any; user: User; newLevel: number }): string {
     const activityType = getActivityType(activity);
-    const activityName = activity.name ?? 'Untitled activity';
+    const activityName = activity.name ?? 'Без названия';
     const verbs = verbsByActivity[activityType] ?? verbsByActivity.default;
     const activityEmoji = emojiByActivity[activityType] ?? emojiByActivity.default;
     const randomNumber = Math.floor(Math.random() * verbs.length);

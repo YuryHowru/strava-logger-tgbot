@@ -23,9 +23,10 @@ import { prepareBadgesListMessage } from '../../features/achievements/service';
 import { prepareChallengeStartedMessage, prepareChallengeStatusMessage } from '../../features/challenges/messages';
 import { finalizeChallenge, isChallengeExpired, parseChallengeMetric } from '../../features/challenges/service';
 import { prepareQuestsMessage } from '../../features/quests/messages';
-import { getUserWeeklyQuestProgress } from '../../features/quests/service';
-import { prepareBossStatusMessage } from '../../features/boss/messages';
-import { getCurrentBossStatus } from '../../features/boss/service';
+import { createWeeklyQuestsForChat, getUserWeeklyQuestProgress } from '../../features/quests/service';
+import { prepareBossSpawnMessage, prepareBossStatusMessage } from '../../features/boss/messages';
+import { ensureWeeklyBossBattleForChat, getCurrentBossStatus } from '../../features/boss/service';
+import { getCurrentWeekPeriod } from '../../features/scheduling/dates';
 import { getStravaAuthUrl } from '../strava/service';
 import { errorLog, log } from '../../shared/logger';
 
@@ -268,6 +269,83 @@ async function handleBossCommand(ctx: BotContext): Promise<void> {
     await ctx.reply(prepareBossStatusMessage(battle, contributors), { parse_mode: 'Markdown' });
 }
 
+function getKickoffMessage(): string {
+    return [
+        '🏅 *Что нового*',
+        '',
+        '📅 *Недельные итоги чата*',
+        'Теперь бот сам подводит итоги недели каждый понедельник.',
+        'В отчёте будет:',
+        '• кто тренировался',
+        '• сколько было тренировок',
+        '• сколько XP заработал чат',
+        '• общая дистанция',
+        '• топ недели',
+        '• рандомный герой недели',
+        '🎲 Рандомный активный участник недели получает +100 XP.',
+        '',
+        '🎯 *Личные квесты недели*',
+        'Каждую неделю бот выдаёт персональные квесты.',
+        'Примеры квестов:',
+        '• сделать несколько тренировок',
+        '• набрать XP',
+        '• потренироваться в несколько разных дней',
+        'Команда: /quests',
+        'За каждый закрытый квест: +100 XP.',
+        '',
+        '👹 *Босс недели*',
+        'Теперь у чата есть общий недельный босс.',
+        'Каждая тренировка наносит ему урон.',
+        'Урон = XP за тренировку.',
+        'Команда: /boss',
+        'Если чат побеждает босса, все участники недели получают +100 XP.',
+        '',
+        '🔁 *Камбэк-миссии*',
+        'Если ты вернулся после паузы 7+ дней, бот запустит камбэк-миссию.',
+        'Сделай ещё одну тренировку за 3 дня — получишь +200 XP.',
+        'Новые медали:',
+        '• Камбэк — вернулся после 7+ дней',
+        '• Большой Камбэк — вернулся после 14+ дней',
+        '• Из Спячки — вернулся после 30+ дней',
+        '',
+        '🎤 *Месячные награды*',
+        'В начале каждого месяца бот сам выдаёт номинации за прошлый месяц.',
+        'Номинации:',
+        '• XP Machine — больше всего XP',
+        '• Самый стабильный — больше всего тренировочных дней',
+        '• Камбэк месяца — самый мощный возврат после паузы',
+        '• Small Steps — небольшой, но честный вклад',
+        '• Random Hero — случайный активный участник месяца',
+        'За каждую номинацию: +100 XP.',
+        '',
+        '🛠 *Исправления*',
+        '• сообщения о тренировках стали чище и аккуратнее',
+        '• бонусы, автопосты и повторные события Strava теперь обрабатываются надёжнее',
+    ].join('\n');
+}
+
+async function prepareKickoffForChat(chatId: string) {
+    const period = getCurrentWeekPeriod();
+    const [, battle] = await Promise.all([
+        createWeeklyQuestsForChat(chatId, period),
+        ensureWeeklyBossBattleForChat(chatId, period),
+    ]);
+
+    return battle;
+}
+
+async function handleKickoffCommand(ctx: BotContext): Promise<void> {
+    log('BOT', `Command /kickoff from ${ctx.from.id} in chat ${ctx.chat.id}`);
+
+    if (!(await assertAdmin(ctx))) {
+        return;
+    }
+
+    const battle = await prepareKickoffForChat(getChatId(ctx));
+    await ctx.reply(getKickoffMessage(), { parse_mode: 'Markdown' });
+    await ctx.reply(prepareBossSpawnMessage(battle), { parse_mode: 'Markdown' });
+}
+
 function parseChallengeStartInput(ctx: BotContext) {
     const parts = getMessageText(ctx).trim().split(/\s+/);
     if (parts.length < 3) {
@@ -469,6 +547,7 @@ export function setupBotCommands(bot: Telegraf) {
     bot.command('badges', createCommandHandler('Error processing /badges', '❌ Не смог показать медали. Попробуй позже.', handleBadgesCommand));
     bot.command('quests', createCommandHandler('Error processing /quests', '❌ Не смог показать квесты. Попробуй позже.', handleQuestsCommand));
     bot.command('boss', createCommandHandler('Error processing /boss', '❌ Не смог показать босса. Попробуй позже.', handleBossCommand));
+    bot.command('kickoff', createCommandHandler('Error processing /kickoff', '❌ Не получилось запустить kickoff.', handleKickoffCommand));
     bot.command('help', handleHelpCommand);
     bot.command('top', createCommandHandler('Error fetching leaderboard', '❌ Ошибка при получении лидерборда. Попробуйте позже.', handleTopCommand));
     bot.command(

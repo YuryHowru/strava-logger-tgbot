@@ -53,7 +53,7 @@ function getDistanceBonuses(activity: any): Array<{ xp: number; message: string 
 
     if (hasSniperDistance(activity)) {
         log('LOGIC', `Bonus: Sniper (${kmStr} km)`);
-        return [{ xp: 20, message: '🎯 Снайпер! Ровная дистанция (+20 XP)' }];
+        return [{ xp: 20, message: '🎯 Снайпер!: ровная дистанция (+20 XP)' }];
     }
 
     const isMagicNumber = intPart === decPart || (intPart.length === 1 && decPart[0] === intPart && decPart[1] === intPart);
@@ -62,7 +62,7 @@ function getDistanceBonuses(activity: any): Array<{ xp: number; message: string 
     }
 
     log('LOGIC', `Bonus: Magic Numbers (${kmStr} km)`);
-    return [{ xp: 30, message: `💎 Магия чисел (${kmStr} км) (+30 XP)` }];
+    return [{ xp: 30, message: `💎 Красивые цифры: ${kmStr} км (+30 XP)` }];
 }
 
 function getMovingTimeBonuses(activity: any): Array<{ xp: number; message: string }> {
@@ -75,12 +75,12 @@ function getMovingTimeBonuses(activity: any): Array<{ xp: number; message: strin
 
     if (seconds === 0 && minutes > 0) {
         log('LOGIC', `Bonus: Pedant (${minutes} min)`);
-        return [{ xp: 15, message: '⌚️ Ровное время! (+15 XP)' }];
+        return [{ xp: 15, message: '⌚️ Время легло ровно (+15 XP)' }];
     }
 
     if (minutes === seconds && minutes !== 0) {
         log('LOGIC', `Bonus: Sync Time (${minutes}:${seconds})`);
-        return [{ xp: 15, message: `⏱ Синхронизация времени ${minutes}:${seconds} ! (+15 XP)` }];
+        return [{ xp: 15, message: `⏱ Тайминг совпал: ${minutes}:${seconds} (+15 XP)` }];
     }
 
     return [];
@@ -96,7 +96,7 @@ function getCalorieBonuses(activity: any): Array<{ xp: number; message: string }
 
     if (calories % 100 === 0) {
         log('LOGIC', `Bonus: Appetite (${calories} kcal)`);
-        return [{ xp: 20, message: `🍔 Ровный аппетит (${calories} ккал) (+20 XP)` }];
+        return [{ xp: 20, message: `🍔 Ровный аппетит: ${calories} ккал (+20 XP)` }];
     }
 
     const isJackpot = calories > 10 && caloriesString.split('').every((char) => char === caloriesString[0]);
@@ -105,7 +105,7 @@ function getCalorieBonuses(activity: any): Array<{ xp: number; message: string }
     }
 
     log('LOGIC', `Bonus: Jackpot (${calories} kcal)`);
-    return [{ xp: 40, message: `🎰 Калорийный джекпот (${calories} ккал) (+40 XP)` }];
+    return [{ xp: 40, message: `🎰 Калорийный джекпот: ${calories} ккал (+40 XP)` }];
 }
 
 function getStartOfDay(timestampSeconds: number): Date {
@@ -136,8 +136,8 @@ function createStreakData(kind: StreakKind, newStreak: number, xpMultiplier: num
 
 function getDefaultStreakMessage(multiplier: number, showXpBonus: boolean): string {
     return [
-        '🚀 Серия тренировок - 1 день.',
-        showXpBonus ? `Продолжив завтра, получишь бонус *${multiplier}x*!` : null,
+        '🚀 Серия началась: 1 день.',
+        showXpBonus ? `Повторишь завтра — включится бонус *${multiplier}x*.` : null,
     ]
         .filter(Boolean)
         .join('\n');
@@ -145,16 +145,16 @@ function getDefaultStreakMessage(multiplier: number, showXpBonus: boolean): stri
 
 function getSameDayStreakMessage(newStreak: number, multiplier: number, showXpBonus: boolean): string {
     const bonusLine = newStreak > 1
-        ? `Бонус серии *${multiplier}x* всё ещё работает!`
-        : `Продолжай завтра, чтобы получить бонус *${multiplier}x*!`;
+        ? `Бонус серии *${multiplier}x* остаётся активным.`
+        : `Завтра можно забрать бонус *${multiplier}x*.`;
 
-    return ['💪 Легенда. Несколько тренировок в один день.', showXpBonus ? bonusLine : null].filter(Boolean).join('\n');
+    return ['💪 Ещё одна тренировка в тот же день.', showXpBonus ? bonusLine : null].filter(Boolean).join('\n');
 }
 
 function getContinuedStreakMessage(newStreak: number, multiplier: number, showXpBonus: boolean): string {
     return [
-        `💥 Серия тренировок — *${newStreak} ${getDaysWord(newStreak)} подряд*!!`,
-        showXpBonus ? `Активен бонус серии: *${multiplier}x* к XP!` : null,
+        `💥 Серия держится: *${newStreak} ${getDaysWord(newStreak)} подряд*.`,
+        showXpBonus ? `Бонус серии сейчас: *${multiplier}x* к XP.` : null,
     ]
         .filter(Boolean)
         .join('\n');

@@ -103,18 +103,23 @@ async function ensureUserWeeklyQuests({
 export async function createWeeklyQuestsForActiveChats(period = getCurrentWeekPeriod()): Promise<void> {
     const chatIds = await getActiveChatIds();
 
-    for (const chatId of chatIds) {
-        const users = await getChatUsers(chatId);
-        await Promise.all(
-            users.map((user) =>
-                ensureUserWeeklyQuests({
-                    userId: user.id,
-                    periodKey: period.key,
-                    startDate: period.startDate,
-                })
-            )
-        );
-    }
+    await Promise.all(chatIds.map((chatId) => createWeeklyQuestsForChat(chatId, period)));
+}
+
+export async function createWeeklyQuestsForChat(
+    chatId: string,
+    period = getCurrentWeekPeriod()
+): Promise<void> {
+    const users = await getChatUsers(chatId);
+    await Promise.all(
+        users.map((user) =>
+            ensureUserWeeklyQuests({
+                userId: user.id,
+                periodKey: period.key,
+                startDate: period.startDate,
+            })
+        )
+    );
 }
 
 export async function getUserWeeklyQuestProgress(user: User, now = new Date()): Promise<QuestProgress[]> {

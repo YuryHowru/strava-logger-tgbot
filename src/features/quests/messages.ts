@@ -1,8 +1,8 @@
 import type { QuestProgress, QuestType, UserQuest } from './types';
 
 const questLabels: Record<QuestType, string> = {
-    activity_count: 'Сделай тренировки',
-    xp: 'Набери XP',
+    activity_count: 'Закрой тренировки',
+    xp: 'Собери XP',
     active_days: 'Тренировочные дни',
 };
 
@@ -32,7 +32,7 @@ export function prepareQuestCompletedMessage(quest: UserQuest): string {
 
 export function prepareQuestsMessage(username: string, progressRows: QuestProgress[]): string {
     if (!progressRows.length) {
-        return `🎯 *${username.replaceAll('_', ' ')}*, квесты недели пока не созданы. Попробуй позже.`;
+        return `🎯 *${username.replaceAll('_', ' ')}*, квесты недели ещё не появились. Загляни позже.`;
     }
 
     const lines = progressRows.map(({ quest, currentValue }, index) => {
@@ -40,5 +40,5 @@ export function prepareQuestsMessage(username: string, progressRows: QuestProgre
         return `${index + 1}. ${mark} *${questLabels[quest.quest_type]}* — ${formatProgressValue(quest, currentValue)}`;
     });
 
-    return [`🎯 *Квесты недели: ${username.replaceAll('_', ' ')}*`, '', ...lines].join('\n');
+    return [`🎯 *План недели: ${username.replaceAll('_', ' ')}*`, '', ...lines].join('\n');
 }

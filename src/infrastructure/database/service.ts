@@ -780,6 +780,26 @@ export async function markBossBattleDefeated(
     return result.rows[0] || null;
 }
 
+export async function markBossBattleExpired(
+    chatId: string,
+    periodKey: string,
+    db: Queryable = pool
+): Promise<BossBattle | null> {
+    const result = await db.query<BossBattle>(
+        `
+        UPDATE chat_boss_battles
+        SET status = 'expired'
+        WHERE chat_id = $1
+          AND period_key = $2
+          AND status = 'active'
+        RETURNING *
+        `,
+        [chatId, periodKey]
+    );
+
+    return result.rows[0] || null;
+}
+
 export async function getBossContributors(
     chatId: string,
     startDate: string,

@@ -340,7 +340,7 @@ function buildWebhookMessage({
         processingResult.bossProgressMessage,
         processingResult.bossDefeatMessage,
         processingResult.challengeProgressMessage || null,
-        `[Открыть в Страве](https://www.strava.com/activities/${activityId})`,
+        `[Открыть в Strava](https://www.strava.com/activities/${activityId})`,
     ];
 
     return messageParts
