@@ -1,3 +1,5 @@
+export type BossDate = string | Date;
+
 export type BossBattle = {
     id: number;
     chat_id: string;
@@ -6,8 +8,8 @@ export type BossBattle = {
     hp: number;
     current_damage: number;
     status: 'active' | 'defeated' | 'expired';
-    starts_on: string;
-    ends_on: string;
+    starts_on: BossDate;
+    ends_on: BossDate;
     created_at: Date;
     defeated_at: Date | null;
 };

@@ -1,4 +1,4 @@
-import type { BossBattle, BossContributor } from './types';
+import type { BossBattle, BossContributor, BossDate } from './types';
 
 function escapeMarkdown(text: string): string {
     return text.replace(/([_*[\]`])/g, '\\$1');
@@ -8,8 +8,9 @@ function getHpLine(battle: BossBattle): string {
     return `${Math.min(battle.current_damage, battle.hp)} / ${battle.hp} HP`;
 }
 
-function formatDate(dateString: string): string {
-    return new Date(`${dateString}T00:00:00.000Z`).toLocaleDateString('ru-RU');
+function formatDate(date: BossDate): string {
+    const normalizedDate = date instanceof Date ? date : new Date(`${date}T00:00:00.000Z`);
+    return normalizedDate.toLocaleDateString('ru-RU');
 }
 
 export function prepareBossSpawnMessage(battle: BossBattle): string {
