@@ -1,3 +1,5 @@
+import type { BossBattle } from '../boss/types';
+
 export type WeeklySummaryRow = {
     user_id: number;
     username: string;
@@ -19,4 +21,5 @@ export type WeeklySummary = {
     standings: WeeklySummaryRow[];
     randomWinner: WeeklySummaryRow | null;
     randomWinnerGrantedXp: number;
+    bossBattle: BossBattle | null;
 };

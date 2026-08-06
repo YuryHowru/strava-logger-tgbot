@@ -11,10 +11,15 @@ import {
 import type { Queryable } from '../../infrastructure/database/types';
 import { getChallengeBadgeCandidates } from '../achievements/service';
 import type { BadgeKey } from '../achievements/types';
+import { MAX_LVL } from '../activities/constants';
 import { prepareChallengeFinishedMessage } from './messages';
 import type { ChallengeMetric, ChatChallenge, ChallengeStandingRow } from './types';
 
 const CHALLENGE_WINNER_REWARD_XP = 1000;
+
+function capRewardXp(currentXp: number, rewardXp: number, maxRequiredXp: number): number {
+    return Math.max(0, Math.min(rewardXp, maxRequiredXp - currentXp));
+}
 
 export function parseChallengeMetric(rawMetric: string): ChallengeMetric | null {
     if (rawMetric === 'xp') return 'xp';
@@ -45,7 +50,9 @@ export async function finalizeChallenge({
     const standings = await getChallengeStandings(challenge, db);
     const topStanding = standings[0];
     const hasWinner = Boolean(topStanding && topStanding.metric_value > 0);
-    const rewardXp = hasWinner ? CHALLENGE_WINNER_REWARD_XP : 0;
+    const winner = hasWinner ? await getUserById(topStanding.user_id, db) : null;
+    const winnerLevelInfo = winner && winner.level < MAX_LVL ? await findLevelInDb(winner.xp + CHALLENGE_WINNER_REWARD_XP, db) : null;
+    const rewardXp = winnerLevelInfo ? capRewardXp(winner!.xp, CHALLENGE_WINNER_REWARD_XP, winnerLevelInfo.total_required_xp) : 0;
     const finalizedChallenge = await completeChallenge(
         {
             challengeId: challenge.id,
@@ -83,7 +90,6 @@ export async function finalizeChallenge({
         };
     }
 
-    const winner = await getUserById(topStanding.user_id, db);
     if (!winner) {
         return {
             finalizedChallenge,
@@ -94,9 +100,11 @@ export async function finalizeChallenge({
         };
     }
 
-    const newXp = winner.xp + rewardXp;
-    const newLevelInfo = await findLevelInDb(newXp, db);
-    await updateUserXpAndLevel(winner.id, newXp, newLevelInfo.level, db);
+    if (rewardXp > 0) {
+        const newXp = winner.xp + rewardXp;
+        const newLevelInfo = await findLevelInDb(newXp, db);
+        await updateUserXpAndLevel(winner.id, newXp, newLevelInfo.level, db);
+    }
 
     const victoriesCount = await countUserChallengeVictories(winner.id, db);
     const challengeBadgeCandidates = getChallengeBadgeCandidates(victoriesCount);

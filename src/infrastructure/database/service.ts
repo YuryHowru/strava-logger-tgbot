@@ -8,6 +8,7 @@ import type { ComebackCampaign } from '../../features/comeback/types';
 import type { MonthlyAwardCandidate, MonthlyAwardType, MonthlyComebackCandidate } from '../../features/monthly/types';
 import type { QuestType, UserQuest } from '../../features/quests/types';
 import type { WeeklySummaryRow } from '../../features/weekly/types';
+import { MAX_LVL } from '../../features/activities/constants';
 import { log } from '../../shared/logger';
 
 type AuthSession = {
@@ -112,9 +113,9 @@ export async function getUserByUsername(username: string, db: Queryable = pool):
 export async function getTopUsers(limit: number = 10, db: Queryable = pool): Promise<User[]> {
     const topUsersQuery = await db.query<User>(
         `
-        SELECT username, level, xp
+        SELECT username, level, xp, prestige_level
         FROM users
-        ORDER BY level DESC, xp DESC
+        ORDER BY prestige_level DESC, level DESC, xp DESC
         LIMIT $1
         `,
         [limit]
@@ -150,6 +151,27 @@ export async function updateUserXpAndLevel(
     await db.query('UPDATE users SET xp = $1, level = $2 WHERE id = $3', [xp, level, userId]);
 }
 
+export async function prestigeUserIfEligible(
+    userId: number,
+    maxLevel: number,
+    db: Queryable = pool
+): Promise<User | null> {
+    const result = await db.query<User>(
+        `
+        UPDATE users
+        SET prestige_level = prestige_level + 1,
+            level = 0,
+            xp = 0
+        WHERE id = $1
+          AND level >= $2
+        RETURNING *
+        `,
+        [userId, maxLevel]
+    );
+
+    return result.rows[0] || null;
+}
+
 export async function grantUserXpOnce(
     {
         userId,
@@ -165,7 +187,27 @@ export async function grantUserXpOnce(
         reason: string;
     },
     db: Queryable = pool
-): Promise<boolean> {
+): Promise<number> {
+    const user = await getUserById(userId, db);
+    if (!user) {
+        throw new Error(`Cannot grant XP to missing user ${userId}`);
+    }
+
+    if (user.level >= MAX_LVL) {
+        return 0;
+    }
+
+    const rawNewXp = user.xp + xp;
+    const levelInfo = await findLevelInDb(rawNewXp, db);
+    const awardedXp =
+        levelInfo.level >= MAX_LVL
+            ? Math.max(0, Math.min(xp, levelInfo.total_required_xp - user.xp))
+            : xp;
+
+    if (awardedXp <= 0) {
+        return 0;
+    }
+
     const grantResult = await db.query(
         `
         INSERT INTO xp_grants (user_id, grant_type, period_key, xp, reason)
@@ -173,23 +215,18 @@ export async function grantUserXpOnce(
         ON CONFLICT (user_id, grant_type, period_key) DO NOTHING
         RETURNING id
         `,
-        [userId, grantType, periodKey, xp, reason]
+        [userId, grantType, periodKey, awardedXp, reason]
     );
 
     if (!grantResult.rowCount) {
-        return false;
+        return 0;
     }
 
-    const user = await getUserById(userId, db);
-    if (!user) {
-        throw new Error(`Cannot grant XP to missing user ${userId}`);
-    }
+    const newXp = user.xp + awardedXp;
+    const awardedLevelInfo = await findLevelInDb(newXp, db);
+    await updateUserXpAndLevel(user.id, newXp, awardedLevelInfo.level, db);
 
-    const newXp = user.xp + xp;
-    const levelInfo = await findLevelInDb(newXp, db);
-    await updateUserXpAndLevel(user.id, newXp, levelInfo.level, db);
-
-    return true;
+    return awardedXp;
 }
 
 export async function createActivityEvent(

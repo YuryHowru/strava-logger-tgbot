@@ -1,3 +1,5 @@
+import type { XpReward } from '../activities/xp';
+
 export type QuestType = 'activity_count' | 'xp' | 'active_days';
 
 export type UserQuest = {
@@ -19,4 +21,5 @@ export type QuestProgress = {
 
 export type QuestProcessingResult = {
     completedMessages: string[];
+    xpRewards: XpReward[];
 };

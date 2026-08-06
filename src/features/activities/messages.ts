@@ -1,7 +1,8 @@
 import { User } from './types';
-import { DISTANCE_BASED_ACTIVITIES, verbsByActivity, emojiByActivity, rankSystem } from './constants';
+import { DISTANCE_BASED_ACTIVITIES, verbsByActivity, emojiByActivity } from './constants';
 import { formatTime, calculatePace } from './formatters';
 import { getActivityType } from './helpers';
+import { escapeMarkdown, formatRankTitle } from '../prestige/messages';
 
 const PACE_ACTIVITIES = ['Run', 'TrailRun', 'VirtualRun', 'Walk', 'Hike'];
 const SPEED_ACTIVITIES = [
@@ -21,10 +22,6 @@ const SPEED_ACTIVITIES = [
     'InlineSkate',
 ];
 const SWIM_ACTIVITIES = ['Swim', 'PoolSwim'];
-
-function escapeMarkdown(text: string): string {
-    return text.replace(/([_*[\]`])/g, '\\$1');
-}
 
 function formatDistance(meters: number): string {
     return meters >= 1000 ? `${(meters / 1000).toFixed(2)} км` : `${Math.round(meters)} м`;
@@ -97,7 +94,7 @@ export function prepareActivityMessage({ activity, user, newLevel }: { activity:
     const activityEmoji = emojiByActivity[activityType] ?? emojiByActivity.default;
     const randomNumber = Math.floor(Math.random() * verbs.length);
     const randomVerb = verbs[randomNumber];
-    const header = `${activityEmoji} ${rankSystem[newLevel]} *${escapeMarkdown(user.username.replaceAll('_', ' '))}* ${randomVerb}`;
+    const header = `${activityEmoji} ${formatRankTitle(newLevel, user.prestige_level)} *${escapeMarkdown(user.username.replaceAll('_', ' '))}* ${randomVerb}`;
 
     return [header, '', `*${escapeMarkdown(activityName)}*`, ...getActivityStats(activity, activityType)].join('\n');
 }

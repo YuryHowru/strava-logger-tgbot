@@ -1,3 +1,5 @@
+import type { XpReward } from '../activities/xp';
+
 export type BossDate = string | Date;
 
 export type BossBattle = {
@@ -23,4 +25,5 @@ export type BossContributor = {
 export type BossProcessingResult = {
     progressMessage: string | null;
     defeatMessage: string | null;
+    xpRewards: XpReward[];
 };

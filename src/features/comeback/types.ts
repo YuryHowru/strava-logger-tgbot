@@ -1,3 +1,5 @@
+import type { XpReward } from '../activities/xp';
+
 export type ComebackCampaign = {
     id: number;
     user_id: number;
@@ -13,5 +15,6 @@ export type ComebackCampaign = {
 
 export type ComebackResult = {
     message: string | null;
+    xpRewards: XpReward[];
     unlockedBadgeKeys: Array<'comeback_7' | 'comeback_14' | 'comeback_30'>;
 };

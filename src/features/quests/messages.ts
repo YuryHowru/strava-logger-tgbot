@@ -18,6 +18,10 @@ function formatQuestTarget(quest: UserQuest): string {
     return `${quest.target_value} шт.`;
 }
 
+export function formatQuestRewardLabel(quest: UserQuest): string {
+    return `Квест: ${questLabels[quest.quest_type]} — ${formatQuestTarget(quest)}`;
+}
+
 function formatProgressValue(quest: UserQuest, currentValue: number): string {
     if (quest.quest_type === 'xp') {
         return `${currentValue}/${quest.target_value} XP`;
@@ -27,7 +31,7 @@ function formatProgressValue(quest: UserQuest, currentValue: number): string {
 }
 
 export function prepareQuestCompletedMessage(quest: UserQuest): string {
-    return `🎯 Квест закрыт: ${questLabels[quest.quest_type]} — ${formatQuestTarget(quest)} (+${quest.reward_xp} XP)`;
+    return `🎯 Закрыт квест: ${questLabels[quest.quest_type]} — ${formatQuestTarget(quest)}`;
 }
 
 export function prepareQuestsMessage(username: string, progressRows: QuestProgress[]): string {

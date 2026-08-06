@@ -18,8 +18,10 @@ export function prepareMonthlyAwardsMessage(periodKey: string, awards: MonthlyAw
     }
 
     const lines = awards.map(
-        (award) =>
-            `${award.title}: *${escapeMarkdown(award.username.replaceAll('_', ' '))}* — ${escapeMarkdown(award.value)} (+${award.rewardXp} XP)`
+        (award) => {
+            const rewardLine = award.rewardXp > 0 ? ` (+${award.rewardXp} XP)` : '';
+            return `${award.title}: *${escapeMarkdown(award.username.replaceAll('_', ' '))}* — ${escapeMarkdown(award.value)}${rewardLine}`;
+        }
     );
 
     return [`🎤 *Итоги месяца: ${formatMonth(periodKey)}*`, '', ...lines].join('\n');

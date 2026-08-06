@@ -134,30 +134,17 @@ function createStreakData(kind: StreakKind, newStreak: number, xpMultiplier: num
     };
 }
 
-function getDefaultStreakMessage(multiplier: number, showXpBonus: boolean): string {
-    return [
-        '🚀 Серия началась: 1 день.',
-        showXpBonus ? `Повторишь завтра — включится бонус *${multiplier}x*.` : null,
-    ]
-        .filter(Boolean)
-        .join('\n');
+function getDefaultStreakMessage(): string {
+    return '🚀 Серия: *1 день*.';
 }
 
-function getSameDayStreakMessage(newStreak: number, multiplier: number, showXpBonus: boolean): string {
-    const bonusLine = newStreak > 1
-        ? `Бонус серии *${multiplier}x* остаётся активным.`
-        : `Завтра можно забрать бонус *${multiplier}x*.`;
-
-    return ['💪 Ещё одна тренировка в тот же день.', showXpBonus ? bonusLine : null].filter(Boolean).join('\n');
+function getSameDayStreakMessage(newStreak: number): string {
+    return `💪 Ещё одна сегодня. Серия: *${newStreak} ${getDaysWord(newStreak)}*.`;
 }
 
 function getContinuedStreakMessage(newStreak: number, multiplier: number, showXpBonus: boolean): string {
-    return [
-        `💥 Серия держится: *${newStreak} ${getDaysWord(newStreak)} подряд*.`,
-        showXpBonus ? `Бонус серии сейчас: *${multiplier}x* к XP.` : null,
-    ]
-        .filter(Boolean)
-        .join('\n');
+    const bonusText = showXpBonus ? ` Бонус: *${multiplier}x*.` : '';
+    return `💥 Серия: *${newStreak} ${getDaysWord(newStreak)}*.${bonusText}`;
 }
 
 function getDaysWord(num: number) {
@@ -216,8 +203,8 @@ export function formatStreakMessage(
     }
 
     if (streak.kind === 'same_day') {
-        return getSameDayStreakMessage(streak.newStreak, streak.bonusMultiplier, showXpBonus);
+        return getSameDayStreakMessage(streak.newStreak);
     }
 
-    return getDefaultStreakMessage(streak.bonusMultiplier, showXpBonus);
+    return getDefaultStreakMessage();
 }

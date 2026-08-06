@@ -7,6 +7,24 @@ const schemaQueries = [
     ADD COLUMN IF NOT EXISTS telegram_id BIGINT
     `,
     `
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS prestige_level INTEGER NOT NULL DEFAULT 0
+    `,
+    `
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint
+            WHERE conname = 'users_prestige_level_non_negative'
+        ) THEN
+            ALTER TABLE users
+            ADD CONSTRAINT users_prestige_level_non_negative
+            CHECK (prestige_level >= 0);
+        END IF;
+    END $$
+    `,
+    `
     CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_unique_idx
     ON users (telegram_id)
     WHERE telegram_id IS NOT NULL

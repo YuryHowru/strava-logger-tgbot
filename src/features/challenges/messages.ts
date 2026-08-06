@@ -122,9 +122,10 @@ export function prepareChallengeFinishedMessage({
     const challengeBadgeLine = newChallengeBadgeTitle
         ? `\nНовая медаль: *Победитель челленджа: ${escapeMarkdown(newChallengeBadgeTitle)}*`
         : '';
+    const rewardLine = rewardXp > 0 ? `\nНаграда: *+${rewardXp} XP*` : '';
 
     return `🏁 *${escapeMarkdown(challenge.title)} завершён*\n\nПобедитель: *${escapeMarkdown(winnerUsername.replaceAll(
         '_',
         ' '
-    ))}*\nНаграда: *+${rewardXp} XP*${challengeBadgeLine}${badgeLine}\n\n${leaderboard}`;
+    ))}*${rewardLine}${challengeBadgeLine}${badgeLine}\n\n${leaderboard}`;
 }

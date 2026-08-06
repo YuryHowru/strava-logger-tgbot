@@ -53,7 +53,7 @@ async function saveAndRewardAward(chatId: string, periodKey: string, award: Mont
         return null;
     }
 
-    await grantUserXpOnce(
+    const grantedXp = await grantUserXpOnce(
         {
             userId: award.winnerUserId,
             grantType: `monthly_award_${award.awardType}`,
@@ -64,7 +64,10 @@ async function saveAndRewardAward(chatId: string, periodKey: string, award: Mont
         db
     );
 
-    return award;
+    return {
+        ...award,
+        rewardXp: grantedXp,
+    };
 }
 
 export async function buildMonthlyAwards({

@@ -67,7 +67,7 @@ async function completeActiveComeback({
         return null;
     }
 
-    await grantUserXpOnce(
+    const grantedXp = await grantUserXpOnce(
         {
             userId: user.id,
             grantType: 'comeback_completed',
@@ -79,7 +79,8 @@ async function completeActiveComeback({
     );
 
     return {
-        message: prepareComebackCompletedMessage(completed.reward_xp),
+        message: grantedXp > 0 ? prepareComebackCompletedMessage(grantedXp) : null,
+        xpRewards: grantedXp > 0 ? [{ label: 'Камбэк-миссия', xp: grantedXp }] : [],
         unlockedBadgeKeys: [],
     };
 }
@@ -127,6 +128,7 @@ async function startComebackIfEligible({
 
     return {
         message: prepareComebackStartedMessage(inactivityDays),
+        xpRewards: [],
         unlockedBadgeKeys: unlockedBadgeKeys.filter((badgeKey) =>
             ['comeback_7', 'comeback_14', 'comeback_30'].includes(badgeKey)
         ) as ComebackResult['unlockedBadgeKeys'],
@@ -150,5 +152,5 @@ export async function processComebackCampaign({
     }
 
     const started = await startComebackIfEligible({ user, activityEvent, db });
-    return started ?? { message: null, unlockedBadgeKeys: [] };
+    return started ?? { message: null, xpRewards: [], unlockedBadgeKeys: [] };
 }

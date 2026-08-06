@@ -11,7 +11,7 @@ import {
 import type { Queryable } from '../../infrastructure/database/types';
 import type { ActivityEvent, User } from '../activities/types';
 import { getCurrentWeekPeriod } from '../scheduling/dates';
-import { prepareQuestCompletedMessage } from './messages';
+import { formatQuestRewardLabel, prepareQuestCompletedMessage } from './messages';
 import type { QuestProgress, QuestProcessingResult, QuestType, UserQuest } from './types';
 
 const QUEST_REWARD_XP = 100;
@@ -155,6 +155,7 @@ export async function processUserQuests({
     });
     const stats = await getUserActivityStatsForPeriod(user.id, period.startDate, period.endDate, db);
     const completedMessages: string[] = [];
+    const xpRewards: QuestProcessingResult['xpRewards'] = [];
 
     for (const quest of quests) {
         if (quest.status === 'completed' || getQuestCurrentValue(quest, stats) < quest.target_value) {
@@ -166,7 +167,7 @@ export async function processUserQuests({
             continue;
         }
 
-        await grantUserXpOnce(
+        const grantedXp = await grantUserXpOnce(
             {
                 userId: user.id,
                 grantType: `quest_${completedQuest.quest_type}`,
@@ -176,8 +177,14 @@ export async function processUserQuests({
             },
             db
         );
-        completedMessages.push(prepareQuestCompletedMessage(completedQuest));
+        if (grantedXp > 0) {
+            completedMessages.push(prepareQuestCompletedMessage(completedQuest));
+            xpRewards.push({
+                label: formatQuestRewardLabel(completedQuest),
+                xp: grantedXp,
+            });
+        }
     }
 
-    return { completedMessages };
+    return { completedMessages, xpRewards };
 }

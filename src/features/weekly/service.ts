@@ -17,19 +17,22 @@ export async function buildWeeklySummary({
     periodKey,
     startDate,
     endDate,
+    bossBattle = null,
     db,
 }: {
     chatId: string;
     periodKey: string;
     startDate: string;
     endDate: string;
+    bossBattle?: WeeklySummary['bossBattle'];
     db?: Queryable;
 }): Promise<WeeklySummary> {
     const standings = await getWeeklySummaryRows({ chatId, startDate, endDate }, db);
     const randomWinner = pickRandomWinner(standings);
+    let randomWinnerGrantedXp = 0;
 
     if (randomWinner) {
-        await grantUserXpOnce(
+        const grantedXp = await grantUserXpOnce(
             {
                 userId: randomWinner.user_id,
                 grantType: 'weekly_random',
@@ -39,6 +42,8 @@ export async function buildWeeklySummary({
             },
             db
         );
+
+        randomWinnerGrantedXp = grantedXp;
     }
 
     return {
@@ -52,6 +57,7 @@ export async function buildWeeklySummary({
         totalDistanceM: standings.reduce((total, user) => total + user.total_distance_m, 0),
         standings,
         randomWinner,
-        randomWinnerGrantedXp: randomWinner ? WEEKLY_RANDOM_REWARD_XP : 0,
+        randomWinnerGrantedXp,
+        bossBattle,
     };
 }

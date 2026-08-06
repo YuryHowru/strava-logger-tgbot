@@ -9,6 +9,7 @@ import {
     getChallengeParticipants,
     getChallengeStandings,
     getChallengeWinnerBadges,
+    getChatUsers,
     getTopUsers,
     getUserAchievements,
     getUserByTelegramId,
@@ -17,16 +18,26 @@ import {
     joinChallenge,
     updateUserXpAndLevel,
 } from '../database/service';
-import { rankSystem } from '../../features/activities/constants';
+import { MAX_LVL } from '../../features/activities/constants';
 import { prepareAddXpMessage } from '../../features/activities/xp';
 import { prepareBadgesListMessage } from '../../features/achievements/service';
 import { prepareChallengeStartedMessage, prepareChallengeStatusMessage } from '../../features/challenges/messages';
 import { finalizeChallenge, isChallengeExpired, parseChallengeMetric } from '../../features/challenges/service';
 import { prepareQuestsMessage } from '../../features/quests/messages';
-import { createWeeklyQuestsForChat, getUserWeeklyQuestProgress } from '../../features/quests/service';
-import { prepareBossSpawnMessage, prepareBossStatusMessage } from '../../features/boss/messages';
-import { ensureWeeklyBossBattleForChat, getCurrentBossStatus } from '../../features/boss/service';
-import { getCurrentWeekPeriod } from '../../features/scheduling/dates';
+import { getUserWeeklyQuestProgress } from '../../features/quests/service';
+import { prepareBossStatusMessage } from '../../features/boss/messages';
+import { getCurrentBossStatus } from '../../features/boss/service';
+import {
+    formatRankTitle,
+    formatUserName,
+    formatUserRank,
+    prepareKickoffPrestigePrompt,
+    prepareMaxLevelPrestigeMessage,
+    preparePrestigePromptMessage,
+    preparePrestigeSuccessMessage,
+    preparePrestigeUnavailableMessage,
+} from '../../features/prestige/messages';
+import { canPrestige, prestigeUser } from '../../features/prestige/service';
 import { getStravaAuthUrl } from '../strava/service';
 import { errorLog, log } from '../../shared/logger';
 
@@ -185,18 +196,20 @@ async function handleMeCommand(ctx: BotContext): Promise<void> {
         getUserAchievements(user.id),
         getChallengeWinnerBadges(user.id),
     ]);
-    const rankTitle = rankSystem[levelInfo.level] ?? 'Без ранга';
     const lastActivity = user.last_activity ? user.last_activity.toLocaleDateString('ru-RU') : 'ещё не было';
     const medalsCount = achievements.length + challengeWinnerBadges.length;
     const message = [
-        `🧍 *${user.username.replaceAll('_', ' ')}*`,
-        `🏷 *${rankTitle}* · уровень *${levelInfo.level}*`,
+        `🧍 *${formatUserName(user)}*`,
+        `🏷 *${formatRankTitle(levelInfo.level, user.prestige_level)}* · уровень *${levelInfo.level}*`,
         '',
         `⚡️ *XP:* ${user.xp} / ${levelInfo.total_required_xp}`,
         `🔥 *Серия:* ${user.streak_count} дн.`,
         `🏅 *Медали:* ${medalsCount}`,
         `🕒 *Последняя тренировка:* ${lastActivity}`,
-    ].join('\n');
+        canPrestige(user) ? `\n${prepareMaxLevelPrestigeMessage()}` : null,
+    ]
+        .filter(Boolean)
+        .join('\n');
 
     await ctx.reply(message, { parse_mode: 'Markdown' });
 }
@@ -227,6 +240,7 @@ function getHelpMessage(): string {
         '🔹 `/badges` — посмотреть свои медали.',
         '🔹 `/quests` — посмотреть личные квесты недели.',
         '🔹 `/boss` — посмотреть босса недели.',
+        '🔹 `/prestige` — начать новый круг после максимального уровня.',
         '🔹 `/challenge` — посмотреть активный челлендж.',
         '🔹 `/challenge_join` — вступить в активный челлендж.',
         '🔹 `/challenge_start <xp|distance|activities> <days> <title>` — старт челленджа.',
@@ -245,7 +259,7 @@ async function handleTopCommand(ctx: BotContext): Promise<void> {
     log('DB', `Fetched ${topUsers.length} users for leaderboard`);
 
     const leaderboard = topUsers
-        .map((user, index) => `${index + 1}. *${user.username}* — ${rankSystem[user.level]} (${user.xp} XP)`)
+        .map((user, index) => `${index + 1}. *${formatUserName(user)}* — ${formatUserRank(user)} (${user.level} lvl, ${user.xp} XP)`)
         .join('\n');
 
     await ctx.reply(`🏆 *Лидерборд* 🏆\n\n${leaderboard}`, { parse_mode: 'Markdown' });
@@ -273,65 +287,15 @@ function getKickoffMessage(): string {
     return [
         '🏅 *Что нового*',
         '',
-        '📅 *Недельные итоги чата*',
-        'Теперь бот сам подводит итоги недели каждый понедельник.',
-        'В отчёте будет:',
-        '• кто тренировался',
-        '• сколько было тренировок',
-        '• сколько XP заработал чат',
-        '• общая дистанция',
-        '• топ недели',
-        '• рандомный герой недели',
-        '🎲 Рандомный активный участник недели получает +100 XP.',
+        '⭐ *Престиж*',
         '',
-        '🎯 *Личные квесты недели*',
-        'Каждую неделю бот выдаёт персональные квесты.',
-        'Примеры квестов:',
-        '• сделать несколько тренировок',
-        '• набрать XP',
-        '• потренироваться в несколько разных дней',
-        'Команда: /quests',
-        'За каждый закрытый квест: +100 XP.',
+        'Для игроков на максимальном уровне появилась команда /prestige.',
+        'Она запускает новый круг: уровень и XP сбрасываются, а игрок получает постоянный знак вроде *⭐1*.',
         '',
-        '👹 *Босс недели*',
-        'Теперь у чата есть общий недельный босс.',
-        'Каждая тренировка наносит ему урон.',
-        'Урон = XP за тренировку.',
-        'Команда: /boss',
-        'Если чат побеждает босса, все участники недели получают +100 XP.',
+        'Серия, медали, история и квесты сохраняются.',
         '',
-        '🔁 *Камбэк-миссии*',
-        'Если ты вернулся после паузы 7+ дней, бот запустит камбэк-миссию.',
-        'Сделай ещё одну тренировку за 3 дня — получишь +200 XP.',
-        'Новые медали:',
-        '• Камбэк — вернулся после 7+ дней',
-        '• Большой Камбэк — вернулся после 14+ дней',
-        '• Из Спячки — вернулся после 30+ дней',
-        '',
-        '🎤 *Месячные награды*',
-        'В начале каждого месяца бот сам выдаёт номинации за прошлый месяц.',
-        'Номинации:',
-        '• XP Machine — больше всего XP',
-        '• Самый стабильный — больше всего тренировочных дней',
-        '• Камбэк месяца — самый мощный возврат после паузы',
-        '• Small Steps — небольшой, но честный вклад',
-        '• Random Hero — случайный активный участник месяца',
-        'За каждую номинацию: +100 XP.',
-        '',
-        '🛠 *Исправления*',
-        '• сообщения о тренировках стали чище и аккуратнее',
-        '• бонусы, автопосты и повторные события Strava теперь обрабатываются надёжнее',
+        '🛠 Тексты сообщений о тренировках стали короче и понятнее.',
     ].join('\n');
-}
-
-async function prepareKickoffForChat(chatId: string) {
-    const period = getCurrentWeekPeriod();
-    const [, battle] = await Promise.all([
-        createWeeklyQuestsForChat(chatId, period),
-        ensureWeeklyBossBattleForChat(chatId, period),
-    ]);
-
-    return battle;
 }
 
 async function handleKickoffCommand(ctx: BotContext): Promise<void> {
@@ -341,9 +305,12 @@ async function handleKickoffCommand(ctx: BotContext): Promise<void> {
         return;
     }
 
-    const battle = await prepareKickoffForChat(getChatId(ctx));
     await ctx.reply(getKickoffMessage(), { parse_mode: 'Markdown' });
-    await ctx.reply(prepareBossSpawnMessage(battle), { parse_mode: 'Markdown' });
+
+    const maxLevelUsers = (await getChatUsers(getChatId(ctx))).filter(canPrestige);
+    if (maxLevelUsers.length > 0) {
+        await ctx.reply(prepareKickoffPrestigePrompt(maxLevelUsers), { parse_mode: 'Markdown' });
+    }
 }
 
 function parseChallengeStartInput(ctx: BotContext) {
@@ -522,21 +489,71 @@ async function handleAddXpCommand(ctx: BotContext): Promise<void> {
         return;
     }
 
-    const newXp = user.xp + parsedInput.xpToAdd;
-    const newLevelInfo = await findLevelInDb(newXp);
+    if (canPrestige(user)) {
+        await ctx.reply(prepareMaxLevelPrestigeMessage());
+        return;
+    }
+
+    const rawNewXp = user.xp + parsedInput.xpToAdd;
+    const newLevelInfo = await findLevelInDb(rawNewXp);
+    const awardedXp =
+        newLevelInfo.level >= MAX_LVL
+            ? Math.max(0, Math.min(parsedInput.xpToAdd, newLevelInfo.total_required_xp - user.xp))
+            : parsedInput.xpToAdd;
+    const newXp = user.xp + awardedXp;
     const newLevel = newLevelInfo.level;
 
     await updateUserXpAndLevel(user.id, newXp, newLevel);
-    log('ADMIN', `Added ${parsedInput.xpToAdd} XP to ${parsedInput.username}. New Level: ${newLevel}`);
+    log('ADMIN', `Added ${awardedXp} XP to ${parsedInput.username}. New Level: ${newLevel}`);
 
     const message = prepareAddXpMessage({
         user,
-        xpToAdd: parsedInput.xpToAdd,
+        xpToAdd: awardedXp,
         newLevel,
         nextLevelRequiredXp: newLevelInfo.total_required_xp,
     });
 
     await ctx.reply(message);
+}
+
+function isPrestigeConfirmed(ctx: BotContext): boolean {
+    const [, confirmation] = getMessageText(ctx).trim().split(/\s+/);
+    return confirmation?.toUpperCase() === 'CONFIRM';
+}
+
+async function handlePrestigeCommand(ctx: BotContext): Promise<void> {
+    log('BOT', `Command /prestige from ${ctx.from.id}`);
+    const user = await getLinkedUserOrReply(ctx);
+
+    if (!user) {
+        return;
+    }
+
+    if (!canPrestige(user)) {
+        const levelInfo = await findLevelInDb(user.xp);
+        await ctx.reply(preparePrestigeUnavailableMessage({ user, nextLevelRequiredXp: levelInfo.total_required_xp }), { parse_mode: 'Markdown' });
+        return;
+    }
+
+    if (!isPrestigeConfirmed(ctx)) {
+        await ctx.reply(preparePrestigePromptMessage(user.prestige_level + 1), { parse_mode: 'Markdown' });
+        return;
+    }
+
+    const prestigedUser = await prestigeUser(user);
+    if (!prestigedUser) {
+        const freshUser = await getUserByTelegramId(ctx.from.id);
+        if (!freshUser) {
+            await ctx.reply('🚨 Сначала подключи Strava через /auth');
+            return;
+        }
+
+        const levelInfo = await findLevelInDb(freshUser.xp);
+        await ctx.reply(preparePrestigeUnavailableMessage({ user: freshUser, nextLevelRequiredXp: levelInfo.total_required_xp }), { parse_mode: 'Markdown' });
+        return;
+    }
+
+    await ctx.reply(preparePrestigeSuccessMessage(prestigedUser), { parse_mode: 'Markdown' });
 }
 
 export function setupBotCommands(bot: Telegraf) {
@@ -547,6 +564,7 @@ export function setupBotCommands(bot: Telegraf) {
     bot.command('badges', createCommandHandler('Error processing /badges', '❌ Не смог показать медали. Попробуй позже.', handleBadgesCommand));
     bot.command('quests', createCommandHandler('Error processing /quests', '❌ Не смог показать квесты. Попробуй позже.', handleQuestsCommand));
     bot.command('boss', createCommandHandler('Error processing /boss', '❌ Не смог показать босса. Попробуй позже.', handleBossCommand));
+    bot.command('prestige', createCommandHandler('Error processing /prestige', '❌ Не получилось выполнить престиж.', handlePrestigeCommand));
     bot.command('kickoff', createCommandHandler('Error processing /kickoff', '❌ Не получилось запустить kickoff.', handleKickoffCommand));
     bot.command('help', handleHelpCommand);
     bot.command('top', createCommandHandler('Error fetching leaderboard', '❌ Ошибка при получении лидерборда. Попробуйте позже.', handleTopCommand));

@@ -1,8 +1,15 @@
 import { User } from './types';
-import { MAX_LVL, rankSystem } from './constants';
+import { MAX_LVL } from './constants';
 import { calculateEarnedXp, getBeautifulStatus } from './calculations';
 import { findLevelInDb } from '../../infrastructure/database/service';
 import { log } from '../../shared/logger';
+import { formatRankTitle, formatUserName, prepareMaxLevelPrestigeMessage } from '../prestige/messages';
+
+export type XpReward = {
+    label: string;
+    xp: number;
+    note?: string;
+};
 
 export async function calculateLevelInfo({
     activity,
@@ -14,14 +21,28 @@ export async function calculateLevelInfo({
     user: User;
     xpMultiplier: number;
     beautifulBonusXp: number;
-}): Promise<{ earnedXp: number; newLevel: number; nextLevelRequiredXp: number; xpWasCapped: boolean }> {
+}): Promise<{
+    earnedXp: number;
+    baseXp: number;
+    appliedBeautifulBonusXp: number;
+    newLevel: number;
+    nextLevelRequiredXp: number;
+    xpWasCapped: boolean;
+}> {
     const baseXp = calculateEarnedXp(activity, xpMultiplier);
     const rawEarnedXp = baseXp + beautifulBonusXp;
 
     log('LOGIC', `Total Earned XP before cap: ${rawEarnedXp} (Base: ${baseXp} + Bonus: ${beautifulBonusXp})`);
 
     if (user.level >= MAX_LVL) {
-        return { earnedXp: 0, newLevel: MAX_LVL, nextLevelRequiredXp: user.xp, xpWasCapped: true };
+        return {
+            earnedXp: 0,
+            baseXp: 0,
+            appliedBeautifulBonusXp: 0,
+            newLevel: MAX_LVL,
+            nextLevelRequiredXp: user.xp,
+            xpWasCapped: true,
+        };
     }
 
     const rawNewXp = user.xp + rawEarnedXp;
@@ -39,40 +60,44 @@ export async function calculateLevelInfo({
 
     return {
         earnedXp,
+        baseXp: Math.min(baseXp, earnedXp),
+        appliedBeautifulBonusXp: Math.max(0, earnedXp - baseXp),
         newLevel: newLevelInfo.level,
         nextLevelRequiredXp: newLevelInfo.total_required_xp,
         xpWasCapped,
     };
 }
 
-export function prepareGamifyMessage({
+export function prepareXpSummaryMessage({
     user,
-    earnedXp,
+    rewards,
     newLevel,
     nextLevelRequiredXp,
-    xpMultiplier,
-    showXpMultiplier,
+    finalXp,
 }: {
     user: User;
-    earnedXp: number;
+    rewards: XpReward[];
     newLevel: number;
     nextLevelRequiredXp: number;
-    xpMultiplier: number;
-    showXpMultiplier: boolean;
+    finalXp: number;
 }): string {
-    if (earnedXp <= 0) {
+    const visibleRewards = rewards.filter((reward) => reward.xp > 0);
+    const totalXp = visibleRewards.reduce((total, reward) => total + reward.xp, 0);
+
+    if (totalXp <= 0) {
         return '';
     }
 
-    const newXp = user.xp + earnedXp;
     const levelUpMessage =
-        newLevel > user.level ? `🎉 ${user.username.replaceAll('_', ' ')} получает ранг *${rankSystem[newLevel]}* 🚀\n` : '';
-    const multiMessage = showXpMultiplier && xpMultiplier > 1 ? ` (*${xpMultiplier.toFixed(2)}x*)` : '';
+        newLevel > user.level ? `🎉 ${formatUserName(user)} получает ранг *${formatRankTitle(newLevel, user.prestige_level)}* 🚀\n` : '';
 
     return [
         levelUpMessage.trim(),
-        `🔥 +*${earnedXp}* XP${multiMessage}`,
-        `🏆 Сейчас: ${newXp}/${nextLevelRequiredXp} XP`,
+        '🔥 *XP*',
+        ...visibleRewards.map((reward) => `${reward.label}: +${reward.xp} XP${reward.note ? ` ${reward.note}` : ''}`),
+        '',
+        `Итого: +*${totalXp}* XP`,
+        `🏆 Сейчас: ${finalXp}/${nextLevelRequiredXp} XP`,
     ]
         .filter(Boolean)
         .join('\n');
@@ -86,9 +111,12 @@ export function prepareAddXpMessage({ user, xpToAdd, newLevel, nextLevelRequired
     const newXp = user.xp + xpToAdd;
     const levelUpMessage = newLevel > user.level ? `🎉 🚀 Новый уровень: ` : '';
 
+    const maxLevelMessage = user.level < MAX_LVL && newLevel >= MAX_LVL ? `\n${prepareMaxLevelPrestigeMessage()}` : '';
+
     return `
     🔥 ${user.username} забирает +${xpToAdd} XP.
-    🏆 ${levelUpMessage} ${rankSystem[newLevel]}, ${newXp}/${nextLevelRequiredXp} XP
+    🏆 ${levelUpMessage} ${formatRankTitle(newLevel, user.prestige_level)}, ${newXp}/${nextLevelRequiredXp} XP
+    ${maxLevelMessage}
   `;
 }
 

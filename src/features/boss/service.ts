@@ -128,6 +128,14 @@ export function ensureWeeklyBossBattleForChat(
     });
 }
 
+export function getWeeklyBossBattleForChat(
+    chatId: string,
+    period = getCurrentWeekPeriod(),
+    db?: Queryable
+): Promise<BossBattle | null> {
+    return getBossBattle(chatId, period.key, db);
+}
+
 export async function getCurrentBossStatus(chatId: string): Promise<{ battle: BossBattle | null; contributors: Awaited<ReturnType<typeof getBossContributors>> }> {
     const period = getCurrentWeekPeriod();
     const battle = await ensureWeeklyBossBattleForChat(chatId, period);
@@ -138,20 +146,22 @@ export async function getCurrentBossStatus(chatId: string): Promise<{ battle: Bo
 
 export async function processBossBattle({
     activityEvent,
+    damageXp,
     db,
 }: {
     activityEvent: ActivityEvent;
+    damageXp: number;
     db: Queryable;
 }): Promise<BossProcessingResult> {
-    if (activityEvent.earned_xp <= 0) {
-        return { progressMessage: null, defeatMessage: null };
+    if (damageXp <= 0) {
+        return { progressMessage: null, defeatMessage: null, xpRewards: [] };
     }
 
     const period = getCurrentWeekPeriod(activityEvent.started_at_utc);
     const battle = await ensureWeeklyBossBattleForChat(activityEvent.chat_id, period, db);
 
     if (battle.status !== 'active') {
-        return { progressMessage: null, defeatMessage: null };
+        return { progressMessage: null, defeatMessage: null, xpRewards: [] };
     }
 
     if (isPastBossPeriod(period)) {
@@ -159,26 +169,28 @@ export async function processBossBattle({
         return {
             progressMessage: expiredBattle ? prepareBossExpiredMessage(expiredBattle) : null,
             defeatMessage: null,
+            xpRewards: [],
         };
     }
 
-    const updatedBattle = await updateBossBattleDamage(battle.id, activityEvent.earned_xp, db);
-    const progressMessage = prepareBossProgressMessage(updatedBattle, activityEvent.earned_xp);
+    const updatedBattle = await updateBossBattleDamage(battle.id, damageXp, db);
+    const progressMessage = prepareBossProgressMessage(updatedBattle, damageXp);
 
     if (updatedBattle.current_damage < updatedBattle.hp) {
-        return { progressMessage, defeatMessage: null };
+        return { progressMessage, defeatMessage: null, xpRewards: [] };
     }
 
     const defeatedBattle = await markBossBattleDefeated(updatedBattle.id, activityEvent.started_at_utc, db);
     if (!defeatedBattle) {
-        return { progressMessage, defeatMessage: null };
+        return { progressMessage, defeatMessage: null, xpRewards: [] };
     }
 
     const participants = await getBossParticipants(defeatedBattle.chat_id, period.startDate, period.endDate, db);
     let rewardedUsersCount = 0;
+    let currentUserRewardXp = 0;
 
     for (const participant of participants) {
-        const granted = await grantUserXpOnce(
+        const grantedXp = await grantUserXpOnce(
             {
                 userId: participant.user_id,
                 grantType: 'boss_defeat',
@@ -189,13 +201,15 @@ export async function processBossBattle({
             db
         );
 
-        if (granted) {
+        if (grantedXp > 0) {
             rewardedUsersCount += 1;
+            currentUserRewardXp = participant.user_id === activityEvent.user_id ? grantedXp : currentUserRewardXp;
         }
     }
 
     return {
         progressMessage,
         defeatMessage: prepareBossDefeatedMessage(defeatedBattle, rewardedUsersCount, BOSS_REWARD_XP),
+        xpRewards: currentUserRewardXp > 0 ? [{ label: 'Победа над боссом', xp: currentUserRewardXp }] : [],
     };
 }

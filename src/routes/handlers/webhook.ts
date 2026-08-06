@@ -3,6 +3,7 @@ import {
     countUserActivitiesByTypeOnDate,
     countUserActivitiesOnDate,
     createActivityEvent,
+    findLevelInDb,
     getActiveChallengeByChatId,
     getChallengeStandings,
     getUserByAthleteId,
@@ -15,16 +16,18 @@ import { getFullActivityInfo } from '../../infrastructure/strava/service';
 import { getActivityBadgeCandidates, formatUnlockedBadges } from '../../features/achievements/service';
 import type { BadgeKey } from '../../features/achievements/types';
 import { formatStreakMessage, getBeautifulStatus, getStreakData } from '../../features/activities/calculations';
+import { MAX_LVL } from '../../features/activities/constants';
 import { getActivityLocalDate, getActivityStartLocal, getActivityStartUtc, getActivityType } from '../../features/activities/helpers';
 import { prepareActivityMessage } from '../../features/activities/messages';
 import type { User } from '../../features/activities/types';
-import { calculateLevelInfo, prepareGamifyMessage } from '../../features/activities/xp';
+import { calculateLevelInfo, prepareXpSummaryMessage, type XpReward } from '../../features/activities/xp';
 import { refreshUserToken } from '../../features/auth/service';
 import { prepareChallengeProgressMessage } from '../../features/challenges/messages';
 import { finalizeChallenge, isChallengeExpired } from '../../features/challenges/service';
 import { processComebackCampaign } from '../../features/comeback/service';
 import { processUserQuests } from '../../features/quests/service';
 import { processBossBattle } from '../../features/boss/service';
+import { prepareMaxLevelPrestigeMessage } from '../../features/prestige/messages';
 import { errorLog, log } from '../../shared/logger';
 import { PoolClient } from 'pg';
 
@@ -43,13 +46,11 @@ type WebhookResponse = {
 };
 
 type ActivityProcessingResult = {
-    earnedXp: number;
     newLevel: number;
     nextLevelRequiredXp: number;
+    finalXp: number;
+    xpRewards: XpReward[];
     streakMessage: string;
-    xpMultiplier: number;
-    showXpMultiplier: boolean;
-    beautifulBonusMessage: string | null;
     unlockedBadgeKeys: BadgeKey[];
     challengeProgressMessage: string;
     challengeAnnouncement: string | null;
@@ -57,6 +58,7 @@ type ActivityProcessingResult = {
     questMessages: string[];
     bossProgressMessage: string | null;
     bossDefeatMessage: string | null;
+    maxLevelMessage: string | null;
 };
 
 function isCreateActivityEvent(body: WebhookRequest['body']): body is {
@@ -117,7 +119,7 @@ async function getActivityProgress(user: User, activity: any, eventTime: number)
     const streakData = getStreakData(user, eventTime);
     const { newStreak, xpMultiplier } = streakData;
     const { beautifulBonusXp, beautifulBonusMessage } = getBeautifulStatus(activity);
-    const { newLevel, earnedXp, nextLevelRequiredXp, xpWasCapped } = await calculateLevelInfo({
+    const { newLevel, earnedXp, baseXp, appliedBeautifulBonusXp, nextLevelRequiredXp, xpWasCapped } = await calculateLevelInfo({
         activity,
         user,
         xpMultiplier,
@@ -134,8 +136,59 @@ async function getActivityProgress(user: User, activity: any, eventTime: number)
         beautifulBonusMessage: showXpMultiplier ? beautifulBonusMessage : null,
         newLevel,
         earnedXp,
+        baseXp,
+        appliedBeautifulBonusXp,
         nextLevelRequiredXp,
     };
+}
+
+function formatBonusLabel(message: string | null): string {
+    return message?.replace(/\s*\(\+\d+ XP\)$/, '') ?? 'Бонус';
+}
+
+function getBeautifulBonusRewards(progress: Awaited<ReturnType<typeof getActivityProgress>>): XpReward[] {
+    if (progress.appliedBeautifulBonusXp <= 0) {
+        return [];
+    }
+
+    const bonusRows = progress.beautifulBonusMessage
+        ?.split('\n')
+        .map((message) => {
+            const xpMatch = message.match(/\(\+(\d+) XP\)$/);
+            return xpMatch
+                ? {
+                      label: formatBonusLabel(message),
+                      xp: Number(xpMatch[1]),
+                  }
+                : null;
+        })
+        .filter((reward): reward is XpReward => Boolean(reward));
+
+    if (bonusRows?.length && sumXpRewards(bonusRows) === progress.appliedBeautifulBonusXp) {
+        return bonusRows;
+    }
+
+    return [{ label: 'Бонусы', xp: progress.appliedBeautifulBonusXp }];
+}
+
+function getActivityXpRewards(progress: Awaited<ReturnType<typeof getActivityProgress>>): XpReward[] {
+    const rewards: XpReward[] = [];
+
+    if (progress.baseXp > 0) {
+        rewards.push({
+            label: 'Тренировка',
+            xp: progress.baseXp,
+            note: progress.showXpMultiplier && progress.xpMultiplier > 1 ? `(серия ${progress.xpMultiplier.toFixed(2)}x)` : undefined,
+        });
+    }
+
+    rewards.push(...getBeautifulBonusRewards(progress));
+
+    return rewards;
+}
+
+function sumXpRewards(rewards: XpReward[]): number {
+    return rewards.reduce((total, reward) => total + reward.xp, 0);
 }
 
 function getActivityEventPayload(user: User, activity: any, activityId: number, earnedXp: number) {
@@ -236,6 +289,7 @@ async function processActivityUpdate({
     eventTime: number;
 }): Promise<ActivityProcessingResult | null> {
     const progress = await getActivityProgress(user, activity, eventTime);
+    const wasAlreadyMaxLevel = user.level >= MAX_LVL;
     const newXp = user.xp + progress.earnedXp;
     const activityEventPayload = getActivityEventPayload(user, activity, activityId, progress.earnedXp);
     const userAfter = {
@@ -278,29 +332,37 @@ async function processActivityUpdate({
                 userId: user.id,
             }),
         ]);
-        const comebackResult = await processComebackCampaign({
-            user,
-            activityEvent,
-            db: client,
-        });
-        const questResult = await processUserQuests({
-            user,
-            activityEvent,
-            db: client,
-        });
+        const comebackResult = wasAlreadyMaxLevel
+            ? { message: null, xpRewards: [], unlockedBadgeKeys: [] }
+            : await processComebackCampaign({
+                  user,
+                  activityEvent,
+                  db: client,
+              });
+        const questResult = wasAlreadyMaxLevel
+            ? { completedMessages: [], xpRewards: [] }
+            : await processUserQuests({
+                  user,
+                  activityEvent,
+                  db: client,
+              });
+        const activityXpRewards = getActivityXpRewards(progress);
+        const bossDamageXp = sumXpRewards([...activityXpRewards, ...comebackResult.xpRewards, ...questResult.xpRewards]);
         const bossResult = await processBossBattle({
             activityEvent,
+            damageXp: bossDamageXp,
             db: client,
         });
+        const xpRewards = [...activityXpRewards, ...comebackResult.xpRewards, ...questResult.xpRewards, ...bossResult.xpRewards];
+        const finalXp = user.xp + sumXpRewards(xpRewards);
+        const finalLevelInfo = await findLevelInDb(finalXp, client);
 
         return {
-            earnedXp: progress.earnedXp,
-            newLevel: progress.newLevel,
-            nextLevelRequiredXp: progress.nextLevelRequiredXp,
+            newLevel: finalLevelInfo.level,
+            nextLevelRequiredXp: finalLevelInfo.total_required_xp,
+            finalXp,
+            xpRewards,
             streakMessage: progress.streakMessage,
-            xpMultiplier: progress.xpMultiplier,
-            showXpMultiplier: progress.showXpMultiplier,
-            beautifulBonusMessage: progress.beautifulBonusMessage,
             unlockedBadgeKeys: [...activityBadgeKeys, ...comebackResult.unlockedBadgeKeys],
             challengeProgressMessage: challengeUpdate.challengeProgressMessage,
             challengeAnnouncement: challengeUpdate.challengeAnnouncement,
@@ -308,6 +370,8 @@ async function processActivityUpdate({
             questMessages: questResult.completedMessages,
             bossProgressMessage: bossResult.progressMessage,
             bossDefeatMessage: bossResult.defeatMessage,
+            maxLevelMessage:
+                wasAlreadyMaxLevel || (user.level < MAX_LVL && finalLevelInfo.level >= MAX_LVL) ? prepareMaxLevelPrestigeMessage() : null,
         };
     });
 }
@@ -326,19 +390,18 @@ function buildWebhookMessage({
     const messageParts = [
         prepareActivityMessage({ activity, user, newLevel: processingResult.newLevel }),
         processingResult.streakMessage,
-        processingResult.beautifulBonusMessage,
-        prepareGamifyMessage({
+        prepareXpSummaryMessage({
             user,
-            earnedXp: processingResult.earnedXp,
+            rewards: processingResult.xpRewards,
             newLevel: processingResult.newLevel,
             nextLevelRequiredXp: processingResult.nextLevelRequiredXp,
-            xpMultiplier: processingResult.xpMultiplier,
-            showXpMultiplier: processingResult.showXpMultiplier,
+            finalXp: processingResult.finalXp,
         }),
         ...processingResult.questMessages,
         processingResult.comebackMessage,
         processingResult.bossProgressMessage,
         processingResult.bossDefeatMessage,
+        processingResult.maxLevelMessage,
         processingResult.challengeProgressMessage || null,
         `[Открыть в Strava](https://www.strava.com/activities/${activityId})`,
     ];

@@ -9,6 +9,7 @@ export type User = {
     expiresat: Date;
     xp: number;
     level: number;
+    prestige_level: number;
     is_admin: boolean;
     streak_count: number;
     last_activity: Date | null;
@@ -36,4 +37,3 @@ export type ActivityEvent = {
     local_activity_date: string;
     created_at: Date;
 };
-
